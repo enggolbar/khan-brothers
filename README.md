@@ -7,7 +7,7 @@ React/Vite POS application for Hostinger Node.js hosting and MySQL. Authenticati
 Use a Hostinger Business/Cloud Node.js web app or a VPS (Node.js 22 recommended). PHP-only hosting cannot run this Express API.
 
 1. Use the existing Hostinger database `u857660968_anz_website`. In phpMyAdmin, select it and import [`database/schema.sql`](database/schema.sql). This adds only `kb_*` tables and leaves the existing ERP tables intact.
-2. Deploy this repository as a Node.js web app. Set build command to `npm run build` and start command to `npm start`.
+2. Deploy this repository as a Node.js web app with Node.js 22. Set the entry file to `server.js`, build command to `npm run build`, and start command to `npm start`.
 3. Set `DB_HOST`, `DB_PORT`, `DB_NAME=u857660968_anz_website`, `DB_USER`, and `DB_PASS` in Hostinger environment variables, using the database's current values.
 4. Set `SESSION_SECRET` to a long random secret, `SUPER_ADMIN_EMAIL` to the admin login email, and `SUPER_ADMIN_PASSWORD` to a strong password. The app creates or refreshes this super-admin account at startup. Keep these values private. `ERP_JWT_SECRET`, `ERP_ADMIN_USER`, and `ERP_ADMIN_PASSWORD` are accepted as fallback names.
 5. Open `/api/health` and confirm it returns `{"ok":true}`. Sign in with the super-admin credentials and approve signup requests from the Super Admin panel.
