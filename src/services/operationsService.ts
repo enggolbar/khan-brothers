@@ -1044,7 +1044,6 @@ export interface StaffInput {
   routeArea?: string;
   commissionRate?: number;
   monthlySalary: number;
-  pinCode: string;
   isActive: boolean;
 }
 
@@ -1066,7 +1065,6 @@ export async function upsertStaffMember(
     routeArea: sanitizeStr(input.routeArea || '', 100),
     commissionRate: Number(Math.min(50, Math.max(0, Number(input.commissionRate) || 0)).toFixed(2)),
     monthlySalary: Number(Math.min(10000000, Math.max(0, Number(input.monthlySalary) || 0)).toFixed(2)),
-    pinCode: sanitizeStr(input.pinCode, 10),
     isActive: Boolean(input.isActive),
   };
 

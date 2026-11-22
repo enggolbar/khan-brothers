@@ -57,7 +57,7 @@ function readSession(req) {
   } catch { return null; }
 }
 function writeSession(req,res,user) {
-  const token = signSession({ uid:user.id, role:user.sessionRole || user.role, shopId:user.shopId, staffId:user.staffId, pinVersion:user.pinVersion || null, exp:Math.floor(Date.now()/1000)+sessionMaxAge });
+  const token = signSession({ uid:user.id, role:user.sessionRole || user.role, shopId:user.shopId, staffId:user.staffId, pinVersion:user.pinVersion || null, phoneVersion:user.phoneVersion || null, exp:Math.floor(Date.now()/1000)+sessionMaxAge });
   res.cookie(cookieName, token, { httpOnly:true, secure:req.secure, sameSite:'lax', path:'/', maxAge:sessionMaxAge*1000 });
 }
 function clearSession(req,res) {
@@ -140,24 +140,24 @@ async function getSrMember(shopId, staffId) {
   const [rows]=await pool.execute('SELECT data_json FROM kb_documents WHERE shop_id=? AND collection_path=? AND doc_id=?',[shopId,`shops/${shopId}/staff`,staffId]);
   return rows[0] ? JSON.parse(rows[0].data_json) : null;
 }
-app.post('/api/auth/sr-pin', limitAuthAttempts, async (req,res) => {
-  const businessPhone=normalizePhone(req.body?.businessPhone), staffPhone=normalizePhone(req.body?.staffPhone), pin=String(req.body?.pin||'');
-  if(businessPhone.length<8 || staffPhone.length<8 || !/^\d{4,10}$/.test(pin)) return res.status(400).json({error:'দোকানের ফোন, SR-এর মোবাইল এবং ৪–১০ সংখ্যার PIN দিন।'});
+app.post('/api/auth/sr-phone', limitAuthAttempts, async (req,res) => {
+  const staffPhone=normalizePhone(req.body?.phone);
+  if(staffPhone.length<8 || staffPhone.length>15) return res.status(400).json({error:'সঠিক SR মোবাইল নম্বর দিন।'});
   try {
-    const [shops]=await pool.execute('SELECT id,owner_id,name,phone FROM kb_shops WHERE phone<>\'\'');
-    const matches=shops.filter((shop)=>normalizePhone(shop.phone)===businessPhone);
-    if(matches.length!==1) return res.status(401).json({error:'দোকানের ফোন নম্বর বা SR PIN সঠিক নয়।'});
-    const shop=matches[0];
-    const [owners]=await pool.execute('SELECT status FROM kb_users WHERE id=?',[shop.owner_id]);
-    if(owners[0]?.status!=='active') return res.status(403).json({error:'এই প্রতিষ্ঠানের অ্যাকাউন্ট সক্রিয় নেই।'});
-    const [rows]=await pool.execute('SELECT doc_id,data_json FROM kb_documents WHERE shop_id=? AND collection_path=?',[shop.id,`shops/${shop.id}/staff`]);
-    const member=rows.map((row)=>({id:row.doc_id,...JSON.parse(row.data_json)})).find((item)=>item.role==='sr' && item.isActive && normalizePhone(item.phone)===staffPhone);
-    if(!member) return res.status(401).json({error:'দোকানের ফোন নম্বর বা SR PIN সঠিক নয়।'});
-    const valid=member.pinHash ? await bcrypt.compare(pin,member.pinHash) : member.pinCode===pin;
-    if(!valid) return res.status(401).json({error:'দোকানের ফোন নম্বর বা SR PIN সঠিক নয়।'});
-    writeSession(req,res,{id:shop.owner_id,sessionRole:'sr',shopId:shop.id,staffId:member.id,pinVersion:member.pinUpdatedAt||null});
-    res.json({user:{uid:shop.owner_id,email:'',displayName:member.name,role:'sr',businessName:shop.name,shopId:shop.id,staffId:member.id,staffPhone:member.phone,routeArea:member.routeArea||'',branchName:member.branchName||''}});
-  } catch { res.status(500).json({error:'SR PIN দিয়ে সাইন ইন করা যায়নি।'}); }
+    const [rows]=await pool.execute(`SELECT d.shop_id,d.doc_id,d.data_json,s.owner_id,s.name AS shop_name
+      FROM kb_documents d
+      JOIN kb_shops s ON s.id=d.shop_id
+      JOIN kb_users u ON u.id=s.owner_id AND u.status='active'
+      WHERE d.collection_path=CONCAT('shops/',d.shop_id,'/staff')`);
+    const matches=rows.map((row)=>({shopId:row.shop_id,ownerId:row.owner_id,shopName:row.shop_name,id:row.doc_id,...JSON.parse(row.data_json)}))
+      .filter((member)=>member.role==='sr' && member.isActive && normalizePhone(member.phone)===staffPhone);
+    // Phone numbers are identifiers, so require exactly one active SR match
+    // across all shops instead of selecting an arbitrary tenant on collisions.
+    if(matches.length!==1) return res.status(401).json({error:'এই মোবাইল নম্বরে একটিমাত্র সক্রিয় SR অ্যাকাউন্ট পাওয়া যায়নি। মালিকের সাথে যোগাযোগ করুন।'});
+    const member=matches[0];
+    writeSession(req,res,{id:member.ownerId,sessionRole:'sr',shopId:member.shopId,staffId:member.id,phoneVersion:member.phone||''});
+    res.json({user:{uid:member.ownerId,email:'',displayName:member.name,role:'sr',businessName:member.shopName,shopId:member.shopId,staffId:member.id,staffPhone:member.phone,routeArea:member.routeArea||'',branchName:member.branchName||''}});
+  } catch { res.status(500).json({error:'SR মোবাইল নম্বর দিয়ে সাইন ইন করা যায়নি।'}); }
 });
 
 app.post('/api/auth/logout', (req,res) => { clearSession(req,res); res.json({ok:true}); });
@@ -168,7 +168,7 @@ app.get('/api/auth/me', async (req,res) => {
     if(session.role==='sr') {
       const [owners]=await pool.execute('SELECT status FROM kb_users WHERE id=?',[session.uid]);
       const member=await getSrMember(session.shopId,session.staffId);
-      if(owners[0]?.status!=='active' || !member || !member.isActive || member.role!=='sr' || (member.pinUpdatedAt||null)!==(session.pinVersion||null)) { clearSession(req,res); return res.status(401).json({user:null}); }
+      if(owners[0]?.status!=='active' || !member || !member.isActive || member.role!=='sr' || (member.phone||'')!==(session.phoneVersion||'')) { clearSession(req,res); return res.status(401).json({user:null}); }
       const [shops]=await pool.execute('SELECT name FROM kb_shops WHERE id=? AND owner_id=?',[session.shopId,session.uid]);
       return res.json({user:{uid:session.uid,email:'',displayName:member.name,role:'sr',businessName:shops[0]?.name||'',shopId:session.shopId,staffId:session.staffId,staffPhone:member.phone,routeArea:member.routeArea||'',branchName:member.branchName||''}});
     }
@@ -190,7 +190,7 @@ app.use('/api', async (req, res, next) => {
     if(!user || user.status!=='active') { clearSession(req,res); return res.status(401).json({error:'অ্যাকাউন্ট সক্রিয় নেই।'}); }
     if(session.role==='sr') {
       const member=await getSrMember(session.shopId,session.staffId);
-      if(!member || !member.isActive || member.role!=='sr' || (member.pinUpdatedAt||null)!==(session.pinVersion||null)) { clearSession(req,res); return res.status(401).json({error:'SR account is inactive or PIN changed.'}); }
+      if(!member || !member.isActive || member.role!=='sr' || (member.phone||'')!==(session.phoneVersion||'')) { clearSession(req,res); return res.status(401).json({error:'SR account is inactive or phone changed.'}); }
       req.user={uid:user.id,email:'',displayName:member.name,role:'sr',shopId:session.shopId,staffId:session.staffId,staffPhone:member.phone,routeArea:member.routeArea||'',branchName:member.branchName||''};
     } else req.user = {uid:user.id,email:user.email,displayName:user.display_name,role:user.role};
     next();
@@ -356,7 +356,6 @@ app.post('/api/batch', async (req, res) => {
           if(pinChanged) clean.pinUpdatedAt=now;
           delete clean.pinCode;
         }
-        if(coll==='staff' && clean.role==='sr' && !clean.pinHash) throw new Error('A PIN is required for every SR account.');
         if (!old[0]) clean.createdAt = clean.createdAt || now;
         if ((clean.ownerId && clean.ownerId !== req.user.uid) || !await authorizeShop(req.user.uid, parts[1])) throw new Error('Access denied');
         await conn.execute('INSERT INTO kb_documents(shop_id,collection_path,doc_id,owner_id,data_json) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE owner_id=VALUES(owner_id),data_json=VALUES(data_json)', [parts[1],coll,id,req.user.uid,JSON.stringify(clean)]);

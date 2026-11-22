@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, onSnapshot, query, where } from './mysqlDataStore';
-import { getCurrentUser, requestSignup, signIn, signInWithSrPin, signOut, type AppUser, type SignupFormData } from './authClient';
+import { getCurrentUser, requestSignup, signIn, signInWithSrPhone, signOut, type AppUser, type SignupFormData } from './authClient';
 import {
   BarChart3,
   Barcode,
@@ -639,8 +639,8 @@ export default function App() {
     setUser(nextUser);
   });
 
-  const handleSrPinSignIn = (businessPhone:string,staffPhone:string,pin:string) => runAuthAction(async () => {
-    const nextUser=await signInWithSrPin(businessPhone,staffPhone,pin);
+  const handleSrPhoneSignIn = (phone:string) => runAuthAction(async () => {
+    const nextUser=await signInWithSrPhone(phone);
     setUser(nextUser);
     setActiveTab('sr-orders');
   });
@@ -711,7 +711,7 @@ export default function App() {
     return (
       <LandingAuth
         onEmailSignIn={handleEmailSignIn}
-      onSrPinSignIn={handleSrPinSignIn}
+      onSrPhoneSignIn={handleSrPhoneSignIn}
         onSignUp={handleSignUp}
         onClearError={() => setAuthError(null)}
         signingIn={signingIn}

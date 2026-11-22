@@ -38,7 +38,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
     routeArea: RANGAMATI_ROUTES[0],
     commissionRate: 2.5,
     monthlySalary: 14000,
-    pinCode: '1234',
     isActive: true,
   });
   const [saving, setSaving] = useState(false);
@@ -60,7 +59,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
       routeArea: presetRole === 'sr' ? RANGAMATI_ROUTES[0] : '',
       commissionRate: presetRole === 'sr' ? 2.5 : 0,
       monthlySalary: 14000,
-      pinCode: '',
       isActive: true,
     });
     setModalOpen(true);
@@ -76,7 +74,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
       routeArea: member.routeArea || '',
       commissionRate: Number(member.commissionRate || 0),
       monthlySalary: member.monthlySalary,
-      pinCode: '',
       isActive: member.isActive,
     });
     setModalOpen(true);
@@ -84,8 +81,7 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const needsNewSrPin = form.role === 'sr' && (!editing || editing.role !== 'sr');
-    if (!form.name.trim() || !form.phone.trim() || saving || (needsNewSrPin && !/^\d{4,10}$/.test(form.pinCode)) || (form.pinCode && !/^\d{4,10}$/.test(form.pinCode))) return;
+    if (!form.name.trim() || !form.phone.trim() || saving) return;
     setSaving(true);
     try {
       await upsertStaffMember(shop.id, shop.ownerId, form, editing?.id);
@@ -192,7 +188,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                 <tr className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
                   <th className="py-3 px-4">Team Member</th>
                   <th className="py-3 px-4">Role &amp; Route / Branch</th>
-                  <th className="py-3 px-4">PIN</th>
                   <th className="py-3 px-4 text-right">Commission</th>
                   <th className="py-3 px-4 text-right">Base Salary</th>
                   <th className="py-3 px-4">Status</th>
@@ -211,9 +206,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                       <p className="text-slate-500">
                         {m.role === 'sr' && m.routeArea ? `Route: ${m.routeArea}` : m.branchName}
                       </p>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-xs text-slate-700">
-                      {m.pinCode || (m.role === 'sr' ? 'PIN set' : '—')}
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-xs text-emerald-700 font-semibold tabular-nums">
                       {m.role === 'sr' ? `${Number(m.commissionRate || 0)}%` : '—'}
@@ -275,7 +267,7 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
               </button>
             </div>
             <div className="p-5 space-y-3.5 text-sm">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Full Name
@@ -386,23 +378,6 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                     onChange={(e) => setForm({ ...form, monthlySalary: Number(e.target.value) })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono text-xs border border-slate-200 rounded-lg tabular-nums"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Counter / SR PIN
-                  </label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{4,10}"
-                    minLength={4}
-                    required={form.role==='sr' && (!editing || editing.role!=='sr')}
-                    maxLength={10}
-                    value={form.pinCode}
-                      onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '') })}
-                    className="w-full min-h-[42px] px-3 py-2 font-mono text-xs border border-slate-200 rounded-lg"
-                  />
-                  {editing ? <span className="mt-1 block text-[10px] text-slate-500">ফাঁকা রাখলে বর্তমান PIN অপরিবর্তিত থাকবে। PIN বদলাতে নতুন ৪–১০ সংখ্যার PIN লিখুন।</span> : <span className="mt-1 block text-[10px] text-slate-500">SR সাইন-ইনের জন্য ৪–১০ সংখ্যার PIN দিন। নিরাপত্তার জন্য পরে PIN আর দেখা যাবে না।</span>}
                 </div>
               </div>
 

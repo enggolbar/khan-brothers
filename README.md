@@ -20,6 +20,6 @@ Signup asks for contact name, email, mobile, business name/type, address, distri
 
 Demo login: `demo@kbshop.example` / `Demo@12345`. Run the frontend with `npm run dev` and open the Vite URL to use a browser-local sample workspace without Hostinger environment variables, an API server, or MySQL. Demo changes stay in that browser's local storage. This demo credential is only for preview; it is not a server account.
 
-Field SRs can sign in from the **SR PIN Login** tab using the shop's registered phone, the SR's registered phone, and their PIN. The server verifies the active SR and gives the session access only to SR Orders, customer due for that SR's assigned route, and retailer accounts on that route. Product costs, staff PIN hashes, supplier records, and owner-only modules stay unavailable to SR sessions. Set a PIN when adding an SR; the PIN is stored as a bcrypt hash.
+Field SRs can sign in from the **SR Mobile Login** tab using their registered mobile number. The number must match exactly one active SR across the database. The server gives the session access only to SR Orders, customer due for that SR's assigned route, and retailer accounts on that route. Product costs, supplier records, and owner-only modules stay unavailable to SR sessions. Phone-only login does not verify possession of the phone; add SMS OTP before using this method for sensitive commercial deployments.
 
 Existing Firebase accounts and Firestore data are not imported. Users must submit a new signup request and wait for super-admin approval.

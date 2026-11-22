@@ -71,8 +71,8 @@ export async function signIn(email: string, password: string): Promise<AppUser> 
   return result.user;
 }
 
-export async function signInWithSrPin(businessPhone: string, staffPhone: string, pin: string): Promise<AppUser> {
-  const result = await authRequest<{user:AppUser}>('/sr-pin', {businessPhone,staffPhone,pin});
+export async function signInWithSrPhone(phone: string): Promise<AppUser> {
+  const result = await authRequest<{user:AppUser}>('/sr-phone', {phone});
   return result.user;
 }
 

@@ -6,7 +6,6 @@ import {
   Eye,
   EyeOff,
   LockKeyhole,
-  KeyRound,
   Mail,
   Phone,
   ShieldCheck,
@@ -19,7 +18,7 @@ type LoginType = 'owner' | 'sr';
 
 interface LandingAuthProps {
   onEmailSignIn: (email: string, password: string) => Promise<void>;
-  onSrPinSignIn: (businessPhone:string, staffPhone:string, pin:string) => Promise<void>;
+  onSrPhoneSignIn: (phone:string) => Promise<void>;
   onSignUp: (details: SignupFormData) => Promise<void>;
   onClearError: () => void;
   signingIn: boolean;
@@ -31,7 +30,7 @@ const inputClass =
 
 export const LandingAuth: React.FC<LandingAuthProps> = ({
   onEmailSignIn,
-  onSrPinSignIn,
+  onSrPhoneSignIn,
   onSignUp,
   onClearError,
   signingIn,
@@ -39,9 +38,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
 }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [loginType, setLoginType] = useState<LoginType>('owner');
-  const [businessPhone, setBusinessPhone] = useState('');
-  const [staffPhone, setStaffPhone] = useState('');
-  const [pin, setPin] = useState('');
+  const [srPhone, setSrPhone] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -73,7 +70,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
         setPassword('');
         setConfirmPassword('');
         setNotice('সাইনআপ অনুরোধ পাঠানো হয়েছে। সুপার অ্যাডমিন অনুমোদন করলে এই ইমেইল ও পাসওয়ার্ড দিয়ে সাইন ইন করতে পারবেন।');
-      } else if(loginType==='sr') await onSrPinSignIn(businessPhone.trim(),staffPhone.trim(),pin);
+      } else if(loginType==='sr') await onSrPhoneSignIn(srPhone.trim());
       else await onEmailSignIn(email.trim(), password);
     } catch {
       // The parent translates API errors and displays them in this form.
@@ -83,7 +80,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
   const heading = mode === 'signup' ? 'অ্যাকাউন্টের অনুরোধ পাঠান' : 'স্বাগতম';
   const subheading = mode === 'signup'
     ? 'আপনার ও দোকানের তথ্য দিন। সুপার অ্যাডমিন যাচাই করে অ্যাকাউন্ট চালু করবেন।'
-    : loginType==='sr' ? 'দোকানের ফোন, আপনার মোবাইল নম্বর ও নির্ধারিত PIN ব্যবহার করুন।' : 'আপনার অনুমোদিত অ্যাকাউন্ট দিয়ে সাইন ইন করুন।';
+    : loginType==='sr' ? 'আপনার নিবন্ধিত SR মোবাইল নম্বর ব্যবহার করুন।' : 'আপনার অনুমোদিত অ্যাকাউন্ট দিয়ে সাইন ইন করুন।';
 
   return (
     <main className="min-h-screen bg-[#f4f7f6] text-slate-900 lg:grid lg:grid-cols-[1.05fr_0.95fr]">
@@ -160,7 +157,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
 
             {mode==='login' && <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
               <button type="button" onClick={()=>setLoginType('owner')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='owner'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>মালিক / Admin</button>
-              <button type="button" onClick={()=>setLoginType('sr')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='sr'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>SR PIN Login</button>
+              <button type="button" onClick={()=>setLoginType('sr')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='sr'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>SR Mobile Login</button>
             </div>}
 
             <form onSubmit={(event) => void submit(event)} className="space-y-4">
@@ -174,11 +171,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
                 </label>
               )}
 
-              {mode==='login' && loginType==='sr' && <>
-                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">দোকানের নিবন্ধিত ফোন</span><span className="relative block"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="tel" inputMode="tel" autoComplete="tel" value={businessPhone} onChange={(e)=>setBusinessPhone(e.target.value)} placeholder="দোকানের ফোন নম্বর" required/></span></label>
-                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">SR-এর মোবাইল নম্বর</span><span className="relative block"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="tel" inputMode="tel" autoComplete="tel" value={staffPhone} onChange={(e)=>setStaffPhone(e.target.value)} placeholder="SR-এর নিবন্ধিত মোবাইল" required/></span></label>
-                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">আপনার PIN</span><span className="relative block"><KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="password" inputMode="numeric" autoComplete="current-password" minLength={4} maxLength={10} pattern="[0-9]{4,10}" value={pin} onChange={(e)=>setPin(e.target.value.replace(/\D/g,''))} placeholder="৪–১০ সংখ্যার PIN" required/></span></label>
-              </>}
+              {mode==='login' && loginType==='sr' && <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">SR-এর নিবন্ধিত মোবাইল নম্বর</span><span className="relative block"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="tel" inputMode="tel" autoComplete="tel" value={srPhone} onChange={(e)=>setSrPhone(e.target.value)} placeholder="SR-এর মোবাইল নম্বর" required/></span></label>}
 
               {(mode==='signup' || (mode==='login' && loginType==='owner')) && <label className="block">
                 <span className="mb-1.5 block text-xs font-semibold text-slate-700">ইমেইল</span>
