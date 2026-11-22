@@ -3,6 +3,7 @@ import express from 'express';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -366,8 +367,40 @@ app.post('/api/batch', async (req, res) => {
   finally { conn.release(); }
 });
 
-app.use(express.static(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')));
-app.get('*', (_req,res) => res.sendFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/index.html')));
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+function findFrontendBuild() {
+  const candidates = [
+    path.resolve(serverDir, '../dist'),
+    path.resolve(process.cwd(), 'dist'),
+  ];
+  // Hostinger may publish the configured output directory to public_html,
+  // separately from the Node.js release folder. Search nearby ancestors so
+  // the Express app can serve either deployment layout.
+  for (const start of [serverDir, process.cwd()]) {
+    let dir = path.resolve(start);
+    for (let depth = 0; depth < 6; depth += 1) {
+      candidates.push(path.join(dir, 'public_html'));
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  return candidates.find((dir) => fs.existsSync(path.join(dir, 'index.html')));
+}
+
+const frontendDir = findFrontendBuild();
+if (frontendDir) {
+  app.use(express.static(frontendDir));
+  console.log(`Frontend build found in ${frontendDir}`);
+} else {
+  console.error('Frontend build missing: run `npm run build` and deploy the generated dist/index.html.');
+}
+app.get('*', (_req, res) => {
+  if (!frontendDir) {
+    return res.status(503).type('text/plain').send('Frontend build is missing. Set the Hostinger build command to `npm run build` and deploy the `dist` output.');
+  }
+  return res.sendFile(path.join(frontendDir, 'index.html'));
+});
 const port = Number(process.env.PORT || 3000);
 ensureSuperAdmin()
   .then(() => {
