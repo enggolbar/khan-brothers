@@ -1,0 +1,6 @@
+{
+  "name": "BazarGrid — Smart Super Shop POS",
+  "description": "Cloud SaaS Point of Sale, inventory, Mushak-6.3 VAT billing, bKash/Nagad checkout, and retail analytics for Bangladesh smart super shops across mobile and desktop browsers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid #047857;
+    outline-offset: 2px;
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Subtle commercial scrollbars */
+.commercial-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.commercial-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.commercial-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
+  border-radius: 9999px;
+}
+
+.commercial-scroll-dark::-webkit-scrollbar {
+  width: 5px;
+}
+
+.commercial-scroll-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.commercial-scroll-dark::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.2);
+  border-radius: 9999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 80mm Thermal POS Receipt, Commercial Barcode/Shelf Stickers & SR Delivery Challan Print Mode */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #thermal-receipt-sheet,
+  #thermal-receipt-sheet *,
+  #barcode-print-sheet,
+  #barcode-print-sheet *,
+  #sr-challan-print-sheet,
+  #sr-challan-print-sheet * {
+    visibility: visible !important;
+  }
+
+  #thermal-receipt-sheet {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 80mm !important;
+    margin: 0 auto !important;
+    padding: 4mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  #barcode-print-sheet,
+  #sr-challan-print-sheet {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
