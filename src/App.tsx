@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from './mysqlDataStore';
+import { getCurrentUser, requestSignup, signIn, signInWithSrPin, signOut, type AppUser, type SignupFormData } from './authClient';
 import {
   BarChart3,
   Barcode,
@@ -26,13 +26,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import {
-  auth,
-  db,
-  googleProvider,
-  handleFirestoreError,
-  OperationType,
-} from './firebase';
+import { db, handleDataError, OperationType } from './dataClient';
 import {
   type Branch,
   type Customer,
@@ -66,6 +60,7 @@ import { StaffRolesView } from './components/StaffRolesView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { ShopSettingsView } from './components/ShopSettingsView';
 import { ReceiptModal } from './components/ReceiptModal';
+import { AdminApprovalPanel } from './components/AdminApprovalPanel';
 
 interface NavGroup {
   title: string;
@@ -212,6 +207,7 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
+const SR_NAV_GROUPS = NAV_GROUPS.filter((g) => g.title === 'Distribution & Due');
 
 const STORE_LOGO_URL = '/assets/aistudio/M_S_Khan_Brothers_Gold-Blue_Badge_cceec1db.png';
 
@@ -236,7 +232,7 @@ const BrandMark: React.FC<{ compact?: boolean }> = ({ compact = false }) => (
 );
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -299,8 +295,11 @@ export default function App() {
   }, [quickJumpOpen]);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (nextUser) => {
+    let active = true;
+    void getCurrentUser().then((nextUser) => {
+      if (!active) return;
       setUser(nextUser);
+      if(nextUser?.role==='sr') setActiveTab('sr-orders');
       setAuthReady(true);
       if (!nextUser) {
         setShops([]);
@@ -321,13 +320,17 @@ export default function App() {
         provisioningRef.current = false;
         migratedKhanRef.current = false;
       }
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setAuthError(error instanceof Error ? error.message : 'সেশন যাচাই করা যায়নি।');
+      setAuthReady(true);
     });
-    return () => unsub();
+    return () => { active = false; };
   }, []);
 
   // Subscribe to owner's cloud shops
   useEffect(() => {
-    if (!authReady || !user) return;
+    if (!authReady || !user || user.role === 'super_admin') return;
     const path = 'shops';
     const q = query(collection(db, 'shops'), where('ownerId', '==', user.uid));
 
@@ -345,9 +348,9 @@ export default function App() {
         setShops(list);
         setShopsLoaded(true);
 
-        if (list.length === 0 && !provisioningRef.current) {
+        if (list.length === 0 && user.role !== 'sr' && !provisioningRef.current) {
           provisioningRef.current = true;
-          void createDefaultShop(user)
+          void createDefaultShop(user, user.businessName || undefined)
             .then((createdId) => {
               setActiveShopId(createdId);
             })
@@ -361,7 +364,7 @@ export default function App() {
       },
       (error) => {
         try {
-          handleFirestoreError(error, OperationType.LIST, path);
+          handleDataError(error, OperationType.LIST, path);
         } catch (err) {
           setRuntimeError(err instanceof Error ? err : new Error(String(err)));
         }
@@ -373,12 +376,12 @@ export default function App() {
 
   // Subscribe to all operational subcollections for the active shop
   useEffect(() => {
-    if (!authReady || !user || !activeShopId) return;
+    if (!authReady || !user || user.role === 'super_admin' || !activeShopId) return;
 
     const uid = user.uid;
     const reportErr = (error: unknown, path: string) => {
       try {
-        handleFirestoreError(error, OperationType.LIST, path);
+        handleDataError(error, OperationType.LIST, path);
       } catch (err) {
         setRuntimeError(err instanceof Error ? err : new Error(String(err)));
       }
@@ -597,40 +600,82 @@ export default function App() {
 
   const filteredQuickMenus = useMemo(() => {
     const q = quickJumpQuery.trim().toLowerCase();
-    if (!q) return ALL_NAV_ITEMS;
-    return ALL_NAV_ITEMS.filter(
+    const allowed = user?.role === 'sr' ? SR_NAV_GROUPS.flatMap((group) => group.items) : ALL_NAV_ITEMS;
+    if (!q) return allowed;
+    return allowed.filter(
       (item) =>
         item.label.toLowerCase().includes(q) ||
         item.description.toLowerCase().includes(q) ||
         item.shortLabel.toLowerCase().includes(q)
     );
-  }, [quickJumpQuery]);
+  }, [quickJumpQuery, user?.role]);
 
-  const handleGoogleSignIn = async () => {
+  const getAuthErrorMessage = (error: unknown) => {
+    const code = (error as { code?: string })?.code || '';
+    const messages: Record<string, string> = {
+      signup_pending: 'আপনার সাইনআপ অনুরোধ সুপার অ্যাডমিনের অনুমোদনের অপেক্ষায় আছে।',
+      signup_rejected: 'সাইনআপ অনুরোধ অনুমোদিত হয়নি। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।',
+      email_exists: 'এই ইমেইলে আগে থেকেই অ্যাকাউন্ট আছে। সাইন ইন করুন।',
+      invalid_signup: 'নাম, সঠিক ইমেইল এবং কমপক্ষে ৮ অক্ষরের পাসওয়ার্ড দিন।',
+    };
+    return messages[code] || (error instanceof Error ? error.message : 'সাইন ইন করা যায়নি। আবার চেষ্টা করুন।');
+  };
+
+  const runAuthAction = async (action: () => Promise<void>) => {
     setAuthError(null);
     setSigningIn(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      await action();
     } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : 'Unable to sign in with Google right now.';
-      if (!msg.includes('popup-closed-by-user')) {
-        setAuthError(msg);
-      }
+      setAuthError(getAuthErrorMessage(error));
+      throw error;
     } finally {
       setSigningIn(false);
     }
   };
 
+  const handleEmailSignIn = (email: string, password: string) => runAuthAction(async () => {
+    const nextUser = await signIn(email, password);
+    setUser(nextUser);
+  });
+
+  const handleSrPinSignIn = (businessPhone:string,staffPhone:string,pin:string) => runAuthAction(async () => {
+    const nextUser=await signInWithSrPin(businessPhone,staffPhone,pin);
+    setUser(nextUser);
+    setActiveTab('sr-orders');
+  });
+
+  const handleSignUp = (details: SignupFormData) => runAuthAction(async () => {
+    await requestSignup(details);
+  });
+
   const handleSignOut = async () => {
     setMobileMenuOpen(false);
     setQuickJumpOpen(false);
-    await signOut(auth);
+    await signOut();
+    setUser(null);
+    setShops([]);
+    setShopsLoaded(false);
+    setActiveShopId('');
+    setActiveBranchId('');
+    setProducts([]);
+    setSales([]);
+    setCustomers([]);
+    setBranches([]);
+    setSuppliers([]);
+    setPurchases([]);
+    setExpenses([]);
+    setShifts([]);
+    setStaff([]);
+    setSrOrders([]);
+    setLedgerEntries([]);
+    provisioningRef.current = false;
+    migratedKhanRef.current = false;
   };
 
   const handleCreateAdditionalShop = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !newShopName.trim() || creatingShop) return;
+    if (!user || user.isDemo || !newShopName.trim() || creatingShop) return;
     setCreatingShop(true);
     try {
       const createdId = await createDefaultShop(user, newShopName.trim());
@@ -665,16 +710,23 @@ export default function App() {
   if (!user) {
     return (
       <LandingAuth
-        onSignIn={handleGoogleSignIn}
+        onEmailSignIn={handleEmailSignIn}
+      onSrPinSignIn={handleSrPinSignIn}
+        onSignUp={handleSignUp}
+        onClearError={() => setAuthError(null)}
         signingIn={signingIn}
         authError={authError}
       />
     );
   }
 
+  if (user.role === 'super_admin') {
+    return <AdminApprovalPanel user={user} onSignOut={handleSignOut} />;
+  }
+
   if (!shopsLoaded || !activeShop) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-[#EAF5FF] flex items-center justify-center p-6">
         <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl p-6 text-center space-y-2 shadow-xs">
           <p className="font-display text-base font-bold text-slate-900">
             Setting up M/S Khan Brothers Workspace
@@ -687,7 +739,9 @@ export default function App() {
     );
   }
 
-  const activeNavMeta = ALL_NAV_ITEMS.find((i) => i.id === activeTab) || ALL_NAV_ITEMS[0];
+  const visibleNavGroups = user.role==='sr' ? SR_NAV_GROUPS : NAV_GROUPS;
+  const visibleNavItems = visibleNavGroups.flatMap((group)=>group.items);
+  const activeNavMeta = visibleNavItems.find((i) => i.id === activeTab) || visibleNavItems[0] || ALL_NAV_ITEMS[0];
   const activeBranchName = activeBranch?.name || activeShop.branchName;
   const cashierName = user.displayName || user.email?.split('@')[0] || 'Cashier';
   const cashierInitials = cashierName
@@ -697,15 +751,15 @@ export default function App() {
     .join('');
 
   return (
-    <div className="min-h-screen bg-[#F4F6F9] text-slate-900 flex flex-col lg:flex-row">
+      <div className="min-h-screen bg-[#EAF5FF] text-slate-900 flex flex-col lg:flex-row">
       {/* Desktop Commercial Dark Navigation Rail */}
       <aside
-        className={`hidden lg:flex lg:shrink-0 lg:flex-col bg-[#0B1320] text-slate-300 border-r border-slate-800/80 lg:sticky lg:top-0 lg:h-screen transition-[width] duration-200 ${
+        className={`hidden lg:flex lg:shrink-0 lg:flex-col bg-[#0756A5]/90 text-blue-50 border border-white/25 shadow-2xl shadow-blue-950/20 backdrop-blur-2xl lg:sticky lg:top-3 lg:my-3 lg:ml-3 lg:mr-1.5 lg:h-[calc(100vh-24px)] rounded-3xl overflow-hidden transition-[width] duration-200 ${
           sidebarCompact ? 'lg:w-[76px]' : 'lg:w-[264px]'
         }`}
       >
         {/* Brand Header */}
-        <div className="h-14 px-4 border-b border-slate-800/90 flex items-center justify-between gap-2">
+        <div className="h-14 px-4 border-b border-white/15 flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => navigateTo('dashboard')}
@@ -720,7 +774,7 @@ export default function App() {
               type="button"
               onClick={() => setSidebarCompact(true)}
               title="Collapse sidebar"
-              className="min-h-[32px] min-w-[32px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0"
+              className="min-h-[32px] min-w-[32px] inline-flex items-center justify-center rounded-xl text-blue-100/70 hover:text-white hover:bg-white/15 transition-colors cursor-pointer shrink-0"
             >
               <PanelLeftClose className="w-4 h-4" />
             </button>
@@ -729,43 +783,43 @@ export default function App() {
 
         {/* Multi-Tenant Store Switcher */}
         {sidebarCompact ? (
-          <div className="p-3 border-b border-slate-800/90 flex flex-col items-center gap-2">
+          <div className="p-3 border-b border-white/15 flex flex-col items-center gap-2">
             <button
               type="button"
               onClick={() => setSidebarCompact(false)}
               title="Expand sidebar"
-              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 cursor-pointer"
+              className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl bg-white/10 border border-white/20 text-blue-50 hover:text-white hover:bg-white/20 cursor-pointer"
             >
               <PanelLeftOpen className="w-4 h-4" />
             </button>
           </div>
         ) : (
-          <div className="p-3.5 border-b border-slate-800/90 space-y-2">
+          <div className="p-3.5 border-b border-white/15 space-y-2">
             <div className="flex items-center gap-1.5">
               <select
                 aria-label="Select shop tenant"
                 value={activeShop.id}
                 onChange={(e) => setActiveShopId(e.target.value)}
-                className="flex-1 min-w-0 min-h-[38px] px-2.5 py-1.5 text-xs font-semibold text-white bg-slate-900 border border-slate-700/80 rounded-lg focus:outline-none focus:border-emerald-500 truncate cursor-pointer"
+                className="flex-1 min-w-0 min-h-[38px] px-2.5 py-1.5 text-xs font-semibold text-white bg-blue-950/35 border border-white/20 rounded-xl focus:outline-none focus:border-sky-200/70 truncate cursor-pointer"
               >
                 {shops.map((s) => (
-                  <option key={s.id} value={s.id} className="bg-slate-900 text-white">
+                  <option key={s.id} value={s.id} className="bg-blue-900 text-white">
                     {s.name}
                   </option>
                 ))}
               </select>
-              <button
+              {!user.isDemo && <button
                 type="button"
                 onClick={() => setNewShopModalOpen(true)}
                 title="Create new cloud shop"
-                className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-lg border border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-emerald-500/60 transition-colors cursor-pointer shrink-0"
+                className="min-h-[38px] min-w-[38px] inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 text-blue-50 hover:text-white hover:bg-white/20 transition-colors cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
-              </button>
+              </button>}
             </div>
             <div className="flex items-center justify-between gap-2 px-0.5 text-[11px] text-slate-400">
-              <span className="truncate">{activeBranchName}</span>
-              <span className="font-mono text-emerald-400 capitalize shrink-0">
+              <span className="truncate text-blue-100/80">{activeBranchName}</span>
+              <span className="font-mono text-sky-200 capitalize shrink-0">
                 {activeShop.plan}
               </span>
             </div>
@@ -774,10 +828,10 @@ export default function App() {
 
         {/* Grouped Commercial Navigation Menus */}
         <nav className="flex-1 px-2.5 py-3 space-y-4 overflow-y-auto commercial-scroll-dark">
-          {NAV_GROUPS.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.title} className="space-y-0.5">
               {!sidebarCompact && (
-                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sky-100/60">
                   {group.title}
                 </p>
               )}
@@ -803,16 +857,16 @@ export default function App() {
                     title={sidebarCompact ? item.label : undefined}
                     className={`w-full min-h-[38px] ${
                       sidebarCompact ? 'px-0 justify-center' : 'px-3 justify-between'
-                    } py-2 text-[13px] font-medium rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
+                    } py-2 text-[13px] font-medium rounded-2xl flex items-center gap-2 transition-all duration-200 whitespace-nowrap cursor-pointer ${
                       active
-                        ? 'bg-emerald-500/15 text-emerald-300 font-semibold ring-1 ring-inset ring-emerald-500/30'
-                        : 'text-slate-300 hover:bg-slate-800/75 hover:text-white'
+                        ? 'bg-white/20 text-white font-semibold ring-1 ring-inset ring-white/25 shadow-lg shadow-blue-950/10'
+                        : 'text-blue-50/80 hover:bg-white/12 hover:text-white'
                     }`}
                   >
                     <span className="flex items-center gap-2.5 min-w-0">
                       <Icon
                         className={`w-4 h-4 shrink-0 ${
-                          active ? 'text-emerald-400' : 'text-slate-400'
+                          active ? 'text-sky-100' : 'text-blue-100/65'
                         }`}
                       />
                       {!sidebarCompact && <span className="truncate">{item.label}</span>}
@@ -820,7 +874,7 @@ export default function App() {
                     {!sidebarCompact && countHint && (
                       <span
                         className={`font-mono text-[11px] font-semibold shrink-0 tabular-nums ${
-                          active ? 'text-emerald-300' : 'text-amber-400'
+                          active ? 'text-sky-100' : 'text-amber-200'
                         }`}
                       >
                         {countHint}
@@ -834,15 +888,15 @@ export default function App() {
         </nav>
 
         {/* Merchant Profile Footer */}
-        <div className="p-3 border-t border-slate-800/90 flex items-center justify-between gap-2">
+        <div className="p-3 border-t border-white/15 flex items-center justify-between gap-2">
           {!sidebarCompact && (
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-lg bg-emerald-950 border border-emerald-700/50 text-emerald-300 font-mono text-xs font-bold flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-white/15 border border-white/20 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0">
                 {cashierInitials || 'KB'}
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-white truncate">{cashierName}</p>
-                <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
+                <p className="text-[11px] text-blue-100/70 truncate">{user.email}</p>
               </div>
             </div>
           )}
@@ -852,7 +906,7 @@ export default function App() {
             title="Sign out"
             className={`${
               sidebarCompact ? 'mx-auto' : ''
-            } min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-300 hover:bg-red-950/60 transition-colors cursor-pointer shrink-0`}
+            } min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-xl text-blue-100/70 hover:text-white hover:bg-rose-500/25 transition-colors cursor-pointer shrink-0`}
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -860,9 +914,9 @@ export default function App() {
       </aside>
 
       {/* Main Workspace Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#EAF5FF]">
         {/* Commercial Top Command Header (52px mobile / 56px desktop) */}
-        <header className="sticky top-0 z-30 h-[52px] lg:h-14 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 lg:px-6 flex items-center justify-between gap-3">
+        <header className="sticky top-0 lg:top-3 z-30 h-[52px] lg:h-14 bg-white/75 backdrop-blur-xl border border-white/80 shadow-sm shadow-blue-900/5 rounded-none lg:rounded-2xl mx-0 lg:mx-4 px-4 lg:px-5 flex items-center justify-between gap-3">
           {/* Left Breadcrumb Trail */}
           <div className="min-w-0 flex items-center gap-2 text-sm">
             <img
@@ -875,6 +929,7 @@ export default function App() {
             </span>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
             <span className="font-semibold text-emerald-800 truncate">{activeNavMeta.label}</span>
+            {user.isDemo && <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-800 sm:text-[10px]"><span className="sm:hidden">DEMO</span><span className="hidden sm:inline">{user.localDemo ? 'DEMO · LOCAL ONLY' : 'DEMO · VIEW ONLY'}</span></span>}
           </div>
 
           {/* Right Quick Command Controls */}
@@ -886,7 +941,7 @@ export default function App() {
                 setQuickJumpQuery('');
                 setQuickJumpOpen(true);
               }}
-              className="hidden md:inline-flex items-center justify-between gap-3 min-h-[36px] w-52 px-3 py-1.5 text-xs text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+              className="hidden md:inline-flex items-center justify-between gap-3 min-h-[36px] w-52 px-3 py-1.5 text-xs text-slate-600 bg-white/70 hover:bg-white border border-white/90 rounded-xl transition-colors cursor-pointer"
             >
               <span className="inline-flex items-center gap-2 truncate">
                 <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -895,12 +950,12 @@ export default function App() {
               <span className="font-mono text-[10px] text-slate-400">Ctrl K</span>
             </button>
 
-            {branches.length > 1 && (
+            {user.role!=='sr' && branches.length > 1 && (
               <select
                 aria-label="Active register branch"
                 value={activeBranch?.id || ''}
                 onChange={(e) => setActiveBranchId(e.target.value)}
-                className="hidden sm:block min-h-[36px] px-2.5 py-1 text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:border-emerald-700 cursor-pointer"
+                className="hidden sm:block min-h-[36px] px-2.5 py-1 text-xs font-medium bg-white/75 border border-white rounded-xl text-slate-700 focus:outline-none focus:border-sky-500 cursor-pointer"
               >
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -910,11 +965,11 @@ export default function App() {
               </select>
             )}
 
-            {activeTab !== 'pos' && (
+            {user.role!=='sr' && activeTab !== 'pos' && (
               <button
                 type="button"
                 onClick={() => navigateTo('pos')}
-                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs transition-colors whitespace-nowrap cursor-pointer"
+                className="min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0756A5] hover:bg-[#06498E] rounded-xl shadow-sm shadow-blue-900/20 transition-colors whitespace-nowrap cursor-pointer"
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
                 <span>POS Terminal</span>
@@ -924,7 +979,7 @@ export default function App() {
         </header>
 
         {/* Active Module Viewport */}
-        <main className="flex-1 p-4 lg:p-6 max-w-[1640px] w-full mx-auto">
+        <main className="flex-1 p-4 lg:p-6 max-w-[1640px] w-full mx-auto bg-[#EAF5FF]">
           {activeTab === 'dashboard' && (
             <SmartDashboardView
               shop={activeShop}
@@ -965,6 +1020,7 @@ export default function App() {
               staff={staff}
               srOrders={srOrders}
               onNavigateStaff={() => navigateTo('staff')}
+              isSrPortal={user.role==='sr'}
             />
           )}
 
@@ -974,6 +1030,7 @@ export default function App() {
               customers={customers}
               suppliers={suppliers}
               ledgerEntries={ledgerEntries}
+              isSrPortal={user.role==='sr'}
             />
           )}
 
@@ -1006,6 +1063,8 @@ export default function App() {
               shop={activeShop}
               customers={customers}
               onNavigateLedger={() => navigateTo('ledger')}
+              isSrPortal={user.role==='sr'}
+              srRouteArea={user.routeArea}
             />
           )}
 
@@ -1065,11 +1124,15 @@ export default function App() {
       {/* Mobile Fixed Bottom Navigation Bar (64px height; combined with 52px header <= 14% viewport) */}
       <nav
         aria-label="Mobile navigation"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 pb-safe"
+        className="lg:hidden fixed bottom-3 left-3 right-3 z-40 bg-[#0756A5]/90 text-white backdrop-blur-2xl border border-white/25 rounded-2xl shadow-2xl shadow-blue-950/25 pb-safe overflow-hidden"
       >
-        <div className="grid grid-cols-5 h-16">
+        <div className={`grid ${user.role==='sr' ? 'grid-cols-4' : 'grid-cols-5'} h-16 p-1`}>
           {(
-            [
+            user.role==='sr' ? [
+              { id: 'sr-orders', label: 'Orders', icon: Truck },
+              { id: 'ledger', label: 'Due/Baki', icon: BookOpenCheck },
+              { id: 'customers', label: 'Retailers', icon: Users },
+            ] as const : [
               { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
               { id: 'pos', label: 'POS', icon: ShoppingCart },
               { id: 'sr-orders', label: 'SR Orders', icon: Truck },
@@ -1083,13 +1146,10 @@ export default function App() {
                 key={item.id}
                 type="button"
                 onClick={() => navigateTo(item.id)}
-                className={`relative flex flex-col items-center justify-center gap-1 min-h-[48px] transition-colors ${
-                  active ? 'text-emerald-700 font-semibold' : 'text-slate-500'
+                className={`relative flex flex-col items-center justify-center gap-1 min-h-[48px] rounded-xl transition-colors ${
+                  active ? 'bg-white/20 text-white font-semibold' : 'text-blue-50/75 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                {active && (
-                  <span className="absolute top-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-b-full" />
-                )}
                 <Icon className="w-5 h-5" />
                 <span className="text-[10px] leading-none">{item.label}</span>
               </button>
@@ -1099,16 +1159,16 @@ export default function App() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((v) => !v)}
-            className={`relative flex flex-col items-center justify-center gap-1 min-h-[48px] transition-colors ${
+            className={`relative flex flex-col items-center justify-center gap-1 min-h-[48px] rounded-xl transition-colors ${
               mobileMenuOpen ||
-              !['dashboard', 'pos', 'sr-orders', 'ledger'].includes(activeTab)
-                ? 'text-emerald-700 font-semibold'
-                : 'text-slate-500'
+              (user.role==='sr' ? !['sr-orders','ledger','customers'].includes(activeTab) : !['dashboard', 'pos', 'sr-orders', 'ledger'].includes(activeTab))
+                ? 'bg-white/20 text-white font-semibold'
+                : 'text-blue-50/75 hover:bg-white/10 hover:text-white'
             }`}
           >
             {(mobileMenuOpen ||
-              !['dashboard', 'pos', 'sr-orders', 'ledger'].includes(activeTab)) && (
-              <span className="absolute top-0 left-3 right-3 h-0.5 bg-emerald-700 rounded-b-full" />
+              (user.role==='sr' ? !['sr-orders','ledger','customers'].includes(activeTab) : !['dashboard', 'pos', 'sr-orders', 'ledger'].includes(activeTab))) && (
+              <span className="absolute inset-1 rounded-xl ring-1 ring-inset ring-white/15 pointer-events-none" />
             )}
             <LayoutGrid className="w-5 h-5" />
             <span className="text-[10px] leading-none">Menus</span>
@@ -1124,9 +1184,9 @@ export default function App() {
           aria-modal="true"
           aria-label="All POS Menus"
         >
-          <div className="bg-white rounded-t-3xl max-h-[88vh] flex flex-col overflow-hidden">
-            <div className="bg-[#0B1320] text-white px-5 pt-3 pb-4">
-              <div className="w-10 h-1 bg-slate-600 rounded-full mx-auto mb-3" />
+            <div className="bg-white rounded-t-3xl max-h-[88vh] flex flex-col overflow-hidden">
+            <div className="bg-[#0756A5] text-white px-5 pt-3 pb-4">
+              <div className="w-10 h-1 bg-white/35 rounded-full mx-auto mb-3" />
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <img
@@ -1138,7 +1198,7 @@ export default function App() {
                     <h2 className="font-display text-base font-bold text-white truncate">
                       {activeShop.name}
                     </h2>
-                    <p className="text-xs text-slate-400 truncate">
+                    <p className="text-xs text-blue-100/75 truncate">
                       {activeShop.address}
                     </p>
                   </div>
@@ -1147,21 +1207,21 @@ export default function App() {
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
                   aria-label="Close menus"
-                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-slate-300 hover:text-white bg-slate-800/80"
+                  className="min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-xl text-white/80 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-5 pb-safe bg-[#F4F6F9]">
+              <div className="p-4 overflow-y-auto space-y-5 pb-safe bg-[#EAF5FF]">
               {/* Mobile Shop Switcher */}
               <div className="flex items-center gap-2">
                 <select
                   aria-label="Switch shop"
                   value={activeShop.id}
                   onChange={(e) => setActiveShopId(e.target.value)}
-                  className="flex-1 min-h-[42px] px-3 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-xl"
+                  className="flex-1 min-h-[42px] px-3 py-2 text-xs font-semibold bg-white/85 border border-white rounded-xl text-slate-800 shadow-sm"
                 >
                   {shops.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -1169,21 +1229,21 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <button
+                {!user.isDemo && user.role!=='sr' && <button
                   type="button"
                   onClick={() => {
                     setMobileMenuOpen(false);
                     setNewShopModalOpen(true);
                   }}
-                  className="min-h-[42px] px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 rounded-xl whitespace-nowrap"
+                  className="min-h-[42px] px-3.5 py-2 text-xs font-semibold text-white bg-[#0756A5] rounded-xl whitespace-nowrap shadow-sm"
                 >
                   + New Shop
-                </button>
+                </button>}
               </div>
 
-              {NAV_GROUPS.map((group) => (
+              {visibleNavGroups.map((group) => (
                 <div key={group.title} className="space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-[#0756A5]/70 px-1">
                     {group.title}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -1195,15 +1255,15 @@ export default function App() {
                           key={item.id}
                           type="button"
                           onClick={() => navigateTo(item.id)}
-                          className={`min-h-[54px] px-3 py-2.5 rounded-xl border text-left flex items-center gap-2.5 text-xs font-semibold transition-colors ${
+                          className={`min-h-[54px] px-3 py-2.5 rounded-2xl border text-left flex items-center gap-2.5 text-xs font-semibold transition-colors ${
                             active
-                              ? 'bg-emerald-700 border-emerald-700 text-white'
-                              : 'bg-white border-slate-200 text-slate-800'
+                              ? 'bg-[#0756A5] border-[#0756A5] text-white shadow-md shadow-blue-900/15'
+                              : 'bg-white/80 border-white text-slate-800 hover:bg-white'
                           }`}
                         >
                           <Icon
                             className={`w-4 h-4 shrink-0 ${
-                              active ? 'text-emerald-200' : 'text-emerald-700'
+                              active ? 'text-sky-100' : 'text-[#0756A5]'
                             }`}
                           />
                           <span className="truncate">{item.label}</span>

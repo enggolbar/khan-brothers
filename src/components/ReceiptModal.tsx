@@ -33,7 +33,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, shop, onClose 
       '---',
       `Subtotal: ${formatBDT(sale.subtotal)}`,
       sale.discountAmount > 0 ? `Discount: -${formatBDT(sale.discountAmount)}` : '',
-      `VAT: ${formatBDT(sale.vatAmount)}`,
+      `VAT/TAX${sale.vatEnabled === false ? ' (OFF)' : ''}: ${formatBDT(sale.vatAmount)}`,
       `Grand Total: ${formatBDT(sale.totalAmount)}`,
       `Paid (${paymentLabel}): ${formatBDT(sale.paidAmount)}`,
       Number(sale.dueAmount || 0) > 0
@@ -171,7 +171,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, shop, onClose 
                 </div>
               )}
               <div className="flex justify-between">
-                <span className="text-slate-600">VAT</span>
+                <span className="text-slate-600">VAT/TAX{sale.vatEnabled === false ? ' (Off)' : ''}</span>
                 <span>{formatBDT(sale.vatAmount)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-slate-200">

@@ -1,4 +1,4 @@
-import type { User } from 'firebase/auth';
+import type { AppUser } from '../authClient';
 import {
   collection,
   deleteDoc,
@@ -7,8 +7,8 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
-} from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+} from '../mysqlDataStore';
+import { db, handleDataError, OperationType } from '../dataClient';
 import {
   BD_STARTER_CATALOG,
   type Branch,
@@ -43,7 +43,7 @@ export function formatInvoiceNumber(counter: number): string {
   return `BG-${year}-${String(counter).padStart(5, '0')}`;
 }
 
-export async function createDefaultShop(user: User, customName?: string): Promise<string> {
+export async function createDefaultShop(user: AppUser, customName?: string): Promise<string> {
   const shopId = createSafeId('shop');
   const branchId = createSafeId('br');
   const shopName = sanitizeStr(customName || 'M/S Khan Brothers', 100) || 'M/S Khan Brothers';
@@ -84,7 +84,7 @@ export async function createDefaultShop(user: User, customName?: string): Promis
 
     return shopId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, `shops/${shopId}`);
+    handleDataError(error, OperationType.CREATE, `shops/${shopId}`);
   }
 }
 
@@ -118,12 +118,17 @@ export async function seedStarterCatalog(shopId: string, ownerId: string): Promi
     await batch.commit();
     return BD_STARTER_CATALOG.length;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    handleDataError(error, OperationType.WRITE, path);
   }
 }
 
 export interface ProductInput {
   name: string;
+  brand?: string;
+  brandLogoDataUrl?: string;
+  brandLogoUrl?: string;
+  description?: string;
+  imageDataUrl?: string;
   barcode: string;
   sku: string;
   category: string;
@@ -148,6 +153,11 @@ export async function upsertProduct(
 
   const clean = {
     name: sanitizeStr(input.name, 120) || 'Unnamed Item',
+    brand: sanitizeStr(input.brand || '', 80),
+    brandLogoDataUrl: typeof input.brandLogoDataUrl === 'string' && input.brandLogoDataUrl.startsWith('data:image/') && input.brandLogoDataUrl.length <= 80000 ? input.brandLogoDataUrl : '',
+    brandLogoUrl: typeof input.brandLogoUrl === 'string' && input.brandLogoUrl.startsWith('https://www.google.com/s2/favicons?') ? input.brandLogoUrl.slice(0, 300) : '',
+    description: sanitizeStr(input.description || '', 500),
+    imageDataUrl: typeof input.imageDataUrl === 'string' && input.imageDataUrl.startsWith('data:image/') && input.imageDataUrl.length <= 450_000 ? input.imageDataUrl : '',
     barcode: sanitizeStr(input.barcode, 48) || `894${Date.now().toString().slice(-10)}`,
     sku: sanitizeStr(input.sku, 40) || `SKU-${Date.now().toString(36).toUpperCase()}`,
     category: sanitizeStr(input.category, 50) || 'Groceries',
@@ -177,7 +187,7 @@ export async function upsertProduct(
     }
     return productId;
   } catch (error) {
-    handleFirestoreError(error, existingProductId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingProductId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -193,7 +203,7 @@ export async function adjustProductStock(
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -202,7 +212,7 @@ export async function deleteProduct(shopId: string, productId: string): Promise<
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'products', productId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }
 
@@ -211,6 +221,7 @@ export interface CheckoutPayload {
   branchName: string;
   customer: Customer | null;
   discountAmount: number;
+  vatEnabled: boolean;
   paymentMethod: PaymentMethod;
   paymentRef: string;
   paidAmount: number;
@@ -227,18 +238,20 @@ export async function createSaleTransaction(
     throw new Error('Cannot process an empty cart.');
   }
 
-  const saleItems: SaleItem[] = boundedCart.map(({ product, qty }) => {
+  const saleItems: SaleItem[] = boundedCart.map(({ product, qty, unitPrice, vatRate }) => {
     const safeQty = Math.max(1, Math.round(qty));
-    const lineTotal = Number((product.sellingPrice * safeQty).toFixed(2));
+    const safeUnitPrice = Math.min(10000000, Math.max(0, Number(unitPrice) || 0));
+    const safeVatRate = payload.vatEnabled ? Math.min(30, Math.max(0, Number(vatRate) || 0)) : 0;
+    const lineTotal = Number((safeUnitPrice * safeQty).toFixed(2));
     return {
       productId: product.id,
       name: sanitizeStr(product.name, 120),
       barcode: sanitizeStr(product.barcode, 48),
       unit: sanitizeStr(product.unit, 20),
       qty: safeQty,
-      unitPrice: product.sellingPrice,
+      unitPrice: safeUnitPrice,
       costPrice: product.costPrice,
-      vatRate: product.vatRate,
+      vatRate: safeVatRate,
       lineTotal,
     };
   });
@@ -299,6 +312,7 @@ export async function createSaleTransaction(
     subtotal,
     discountAmount,
     vatAmount,
+    vatEnabled: payload.vatEnabled,
     totalAmount,
     paidAmount,
     changeAmount,
@@ -395,7 +409,7 @@ export async function createSaleTransaction(
       updatedAt: null,
     };
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `shops/${shop.id}/sales/${saleId}`);
+    handleDataError(error, OperationType.WRITE, `shops/${shop.id}/sales/${saleId}`);
   }
 }
 
@@ -435,7 +449,7 @@ export async function completeHeldSale(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `shops/${shopId}/sales/${sale.id}`);
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}/sales/${sale.id}`);
   }
 }
 
@@ -447,7 +461,7 @@ export async function voidHeldSale(shopId: string, saleId: string): Promise<void
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -478,7 +492,7 @@ export async function refundSaleAndRestock(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `shops/${shopId}/sales/${sale.id}`);
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}/sales/${sale.id}`);
   }
 }
 
@@ -533,7 +547,7 @@ export async function upsertCustomer(
     }
     return customerId;
   } catch (error) {
-    handleFirestoreError(error, existingCustomerId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingCustomerId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -542,7 +556,7 @@ export async function deleteCustomer(shopId: string, customerId: string): Promis
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'customers', customerId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }
 
@@ -570,7 +584,7 @@ export async function updateShopProfile(shopId: string, input: ShopProfileInput)
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -582,7 +596,7 @@ export async function updateShopPlan(shopId: string, plan: PlanId): Promise<void
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -631,7 +645,7 @@ export async function upsertBranch(
     }
     return branchId;
   } catch (error) {
-    handleFirestoreError(error, existingBranchId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingBranchId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -640,7 +654,7 @@ export async function deleteBranch(shopId: string, branchId: string): Promise<vo
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'branches', branchId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }
 

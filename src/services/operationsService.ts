@@ -5,8 +5,8 @@ import {
   setDoc,
   updateDoc,
   writeBatch,
-} from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+} from '../mysqlDataStore';
+import { db, handleDataError, OperationType } from '../dataClient';
 import {
   type Customer,
   type ExpensePaymentMethod,
@@ -84,7 +84,7 @@ export async function upsertSupplier(
     }
     return supplierId;
   } catch (error) {
-    handleFirestoreError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -128,7 +128,7 @@ export async function settleSupplierBalance(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -170,7 +170,7 @@ export async function addManualSupplierDue(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -179,7 +179,7 @@ export async function deleteSupplier(shopId: string, supplierId: string): Promis
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'suppliers', supplierId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }
 
@@ -223,7 +223,7 @@ export async function seedBangladeshSuppliers(shopId: string, ownerId: string): 
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `shops/${shopId}/suppliers`);
+    handleDataError(error, OperationType.WRITE, `shops/${shopId}/suppliers`);
   }
 }
 
@@ -340,7 +340,7 @@ export async function createPurchaseOrder(
     await batch.commit();
     return poId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `shops/${shopId}/purchases/${poId}`);
+    handleDataError(error, OperationType.WRITE, `shops/${shopId}/purchases/${poId}`);
   }
 }
 
@@ -423,7 +423,7 @@ export async function receivePurchaseOrder(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `shops/${shopId}/purchases/${po.id}`);
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}/purchases/${po.id}`);
   }
 }
 
@@ -436,7 +436,7 @@ export async function cancelPurchaseOrder(shopId: string, po: PurchaseOrder): Pr
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -480,7 +480,7 @@ export async function payPurchaseOrderBalance(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `shops/${shopId}/purchases/${po.id}`);
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}/purchases/${po.id}`);
   }
 }
 
@@ -531,7 +531,7 @@ export async function collectCustomerDue(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -577,7 +577,7 @@ export async function addManualCustomerDue(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -651,7 +651,7 @@ export async function createSrOrder(
     });
     return orderId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    handleDataError(error, OperationType.CREATE, path);
   }
 }
 
@@ -667,7 +667,7 @@ export async function approveSrOrder(shopId: string, order: SrOrder): Promise<vo
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -683,7 +683,7 @@ export async function cancelSrOrder(shopId: string, order: SrOrder): Promise<voi
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -779,7 +779,7 @@ export async function deliverSrOrderBatch(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `shops/${shopId}/srOrders/${order.id}`);
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}/srOrders/${order.id}`);
   }
 }
 
@@ -885,7 +885,7 @@ export async function seedRangamatiDistributionData(
   try {
     await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `shops/${shopId}/staff`);
+    handleDataError(error, OperationType.WRITE, `shops/${shopId}/staff`);
   }
 }
 
@@ -941,7 +941,7 @@ export async function upsertExpense(
     }
     return expenseId;
   } catch (error) {
-    handleFirestoreError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -950,7 +950,7 @@ export async function deleteExpense(shopId: string, expenseId: string): Promise<
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'expenses', expenseId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }
 
@@ -989,7 +989,7 @@ export async function openCashShift(
     });
     return shiftId;
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    handleDataError(error, OperationType.CREATE, path);
   }
 }
 
@@ -1029,7 +1029,7 @@ export async function closeCashShift(
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleDataError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -1087,7 +1087,7 @@ export async function upsertStaffMember(
     }
     return staffId;
   } catch (error) {
-    handleFirestoreError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
+    handleDataError(error, existingId ? OperationType.UPDATE : OperationType.CREATE, path);
   }
 }
 
@@ -1096,6 +1096,6 @@ export async function deleteStaffMember(shopId: string, staffId: string): Promis
   try {
     await deleteDoc(doc(db, 'shops', shopId, 'staff', staffId));
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+    handleDataError(error, OperationType.DELETE, path);
   }
 }

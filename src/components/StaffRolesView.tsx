@@ -60,7 +60,7 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
       routeArea: presetRole === 'sr' ? RANGAMATI_ROUTES[0] : '',
       commissionRate: presetRole === 'sr' ? 2.5 : 0,
       monthlySalary: 14000,
-      pinCode: String(Math.floor(1000 + Math.random() * 9000)),
+      pinCode: '',
       isActive: true,
     });
     setModalOpen(true);
@@ -76,7 +76,7 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
       routeArea: member.routeArea || '',
       commissionRate: Number(member.commissionRate || 0),
       monthlySalary: member.monthlySalary,
-      pinCode: member.pinCode,
+      pinCode: '',
       isActive: member.isActive,
     });
     setModalOpen(true);
@@ -84,7 +84,8 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim() || saving) return;
+    const needsNewSrPin = form.role === 'sr' && (!editing || editing.role !== 'sr');
+    if (!form.name.trim() || !form.phone.trim() || saving || (needsNewSrPin && !/^\d{4,10}$/.test(form.pinCode)) || (form.pinCode && !/^\d{4,10}$/.test(form.pinCode))) return;
     setSaving(true);
     try {
       await upsertStaffMember(shop.id, shop.ownerId, form, editing?.id);
@@ -212,7 +213,7 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                       </p>
                     </td>
                     <td className="py-3 px-4 font-mono text-xs text-slate-700">
-                      {m.pinCode || '—'}
+                      {m.pinCode || (m.role === 'sr' ? 'PIN set' : '—')}
                     </td>
                     <td className="py-3 px-4 text-right font-mono text-xs text-emerald-700 font-semibold tabular-nums">
                       {m.role === 'sr' ? `${Number(m.commissionRate || 0)}%` : '—'}
@@ -392,11 +393,16 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                   </label>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{4,10}"
+                    minLength={4}
+                    required={form.role==='sr' && (!editing || editing.role!=='sr')}
                     maxLength={10}
                     value={form.pinCode}
-                    onChange={(e) => setForm({ ...form, pinCode: e.target.value })}
+                      onChange={(e) => setForm({ ...form, pinCode: e.target.value.replace(/\D/g, '') })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono text-xs border border-slate-200 rounded-lg"
                   />
+                  {editing ? <span className="mt-1 block text-[10px] text-slate-500">ফাঁকা রাখলে বর্তমান PIN অপরিবর্তিত থাকবে। PIN বদলাতে নতুন ৪–১০ সংখ্যার PIN লিখুন।</span> : <span className="mt-1 block text-[10px] text-slate-500">SR সাইন-ইনের জন্য ৪–১০ সংখ্যার PIN দিন। নিরাপত্তার জন্য পরে PIN আর দেখা যাবে না।</span>}
                 </div>
               </div>
 

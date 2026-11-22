@@ -43,6 +43,7 @@ interface SrOrdersViewProps {
   staff: StaffMember[];
   srOrders: SrOrder[];
   onNavigateStaff: () => void;
+  isSrPortal?: boolean;
 }
 
 const DELIVERY_METHODS: { id: SrOrderPaymentMethod; label: string }[] = [
@@ -62,6 +63,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
   staff,
   srOrders,
   onNavigateStaff,
+  isSrPortal = false,
 }) => {
   const [subTab, setSubTab] = useState<'orders' | 'performance'>('orders');
   const [search, setSearch] = useState('');
@@ -443,7 +445,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {srStaff.length === 0 && (
+          {!isSrPortal && srStaff.length === 0 && (
             <button
               type="button"
               disabled={seedingDemo}
@@ -523,7 +525,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
           >
             Orders &amp; Dispatch ({srOrders.length})
           </button>
-          <button
+          {!isSrPortal && <button
             type="button"
             onClick={() => setSubTab('performance')}
             className={`min-h-[36px] px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
@@ -531,19 +533,19 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
             }`}
           >
             SR Performance &amp; Commission ({srScorecards.length})
-          </button>
+          </button>}
         </div>
 
-        <button
+        {!isSrPortal && <button
           type="button"
           onClick={onNavigateStaff}
           className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 self-start sm:self-auto cursor-pointer"
         >
           Manage SR Roster &amp; Commission % →
-        </button>
+        </button>}
       </div>
 
-      {subTab === 'orders' ? (
+      {subTab === 'orders' || isSrPortal ? (
         <>
           {/* Filter Bar */}
           <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] flex flex-col md:flex-row gap-3">
@@ -678,7 +680,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="inline-flex items-center gap-1.5">
-                            {order.status === 'pending' && (
+                            {!isSrPortal && order.status === 'pending' && (
                               <button
                                 type="button"
                                 onClick={() => void approveSrOrder(shop.id, order)}
@@ -688,7 +690,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                                 Approve
                               </button>
                             )}
-                            {(order.status === 'pending' || order.status === 'approved') && (
+                            {!isSrPortal && (order.status === 'pending' || order.status === 'approved') && (
                               <>
                                 <button
                                   type="button"
@@ -828,6 +830,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                   </label>
                   {srStaff.length > 0 ? (
                     <select
+                      disabled={isSrPortal}
                       value={selectedSrId}
                       onChange={(e) => handleSrChange(e.target.value)}
                       className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg bg-white text-xs"
@@ -837,7 +840,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                           {s.name} ({s.commissionRate ?? 0}%)
                         </option>
                       ))}
-                      <option value="">Other / Custom SR</option>
+                      {!isSrPortal && <option value="">Other / Custom SR</option>}
                     </select>
                   ) : (
                     <input
@@ -856,7 +859,8 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Market / Route Area
                   </label>
-                  <select
+                    <select
+                    disabled={isSrPortal}
                     value={routeArea}
                     onChange={(e) => setRouteArea(e.target.value)}
                     className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg bg-white text-xs"
@@ -874,6 +878,7 @@ export const SrOrdersView: React.FC<SrOrdersViewProps> = ({
                     SR Commission (%)
                   </label>
                   <input
+                    readOnly={isSrPortal}
                     type="number"
                     min="0"
                     max="50"

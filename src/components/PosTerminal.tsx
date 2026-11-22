@@ -1,7 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Barcode,
+  ArrowLeft,
   Clock,
+  Folder,
+  List,
   Minus,
   PackagePlus,
   Plus,
@@ -11,6 +14,8 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
+import { BANGLADESH_GROCERY_BRANDS, brandLogoUrl as getCatalogBrandLogo } from '../data/bangladeshBrands';
+import { BrandLogo } from './BrandLogo';
 import {
   PAYMENT_METHODS,
   PRODUCT_CATEGORIES,
@@ -55,10 +60,13 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [productView, setProductView] = useState<'products' | 'brands'>('products');
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [discountType, setDiscountType] = useState<'bdt' | 'pct'>('bdt');
   const [discountInput, setDiscountInput] = useState<string>('');
+  const [vatEnabled, setVatEnabled] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentRef, setPaymentRef] = useState<string>('');
   const [paidInput, setPaidInput] = useState<string>('');
@@ -94,10 +102,38 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       return (
         p.name.toLowerCase().includes(q) ||
         p.barcode.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q)
+        p.sku.toLowerCase().includes(q) ||
+        (p.brand || '').toLowerCase().includes(q)
       );
     });
   }, [activeProducts, searchQuery, selectedCategory]);
+
+  const brandFolders = useMemo(() => {
+    const knownLogoByName = new Map(BANGLADESH_GROCERY_BRANDS.map((brand) => [brand.name.toLocaleLowerCase(), getCatalogBrandLogo(brand.domain)]));
+    const folders = new Map<string, { name: string; products: Product[]; logoDataUrl?: string; logoUrl?: string }>();
+    for (const product of filteredProducts) {
+      const name = product.brand?.trim() || 'Unbranded';
+      const key = name.toLocaleLowerCase();
+      const folder = folders.get(key) || {
+        name,
+        products: [],
+        logoDataUrl: product.brandLogoDataUrl,
+        logoUrl: product.brandLogoUrl || knownLogoByName.get(key),
+      };
+      folder.products.push(product);
+      folder.logoDataUrl ||= product.brandLogoDataUrl;
+      folder.logoUrl ||= product.brandLogoUrl;
+      folders.set(key, folder);
+    }
+    return Array.from(folders.entries())
+      .map(([key, folder]) => ({ key, ...folder }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredProducts]);
+
+  const brandProducts = useMemo(
+    () => selectedBrand ? filteredProducts.filter((product) => (product.brand?.trim().toLocaleLowerCase() || 'unbranded') === selectedBrand) : filteredProducts,
+    [filteredProducts, selectedBrand]
+  );
 
   const cartMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -115,7 +151,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const totals = useMemo(() => {
     const itemCount = cart.reduce((sum, item) => sum + item.qty, 0);
     const subtotal = Number(
-      cart.reduce((sum, item) => sum + item.product.sellingPrice * item.qty, 0).toFixed(2)
+      cart.reduce((sum, item) => sum + item.unitPrice * item.qty, 0).toFixed(2)
     );
     const rawDiscount = Math.max(0, Number(discountInput) || 0);
     const discountAmount =
@@ -128,7 +164,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         .reduce(
           (sum, item) =>
             sum +
-            item.product.sellingPrice * item.qty * taxableRatio * (item.product.vatRate / 100),
+            item.unitPrice * item.qty * taxableRatio * (vatEnabled ? item.vatRate / 100 : 0),
           0
         )
         .toFixed(2)
@@ -159,7 +195,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       dueToAdd,
       shortAmount,
     };
-  }, [cart, discountInput, discountType, paymentMethod, paidInput]);
+  }, [cart, discountInput, discountType, paymentMethod, paidInput, vatEnabled]);
 
   const showNotice = (msg: string) => {
     setScanNotice(msg);
@@ -189,7 +225,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         showNotice('Maximum 50 distinct SKUs per invoice.');
         return prev;
       }
-      return [...prev, { product, qty: 1 }];
+      return [...prev, { product, qty: 1, unitPrice: product.sellingPrice, vatRate: product.vatRate }];
     });
   };
 
@@ -214,9 +250,14 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
+  const updateCartItem = (productId:string, changes:Partial<Pick<CartItem,'unitPrice'|'vatRate'>>) => {
+    setCart((prev)=>prev.map((item)=>item.product.id===productId?{...item,...changes}:item));
+  };
+
   const clearCart = () => {
     setCart([]);
     setDiscountInput('');
+    setVatEnabled(true);
     setPaymentRef('');
     setPaidInput('');
     setSelectedCustomerId('');
@@ -305,6 +346,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         paymentMethod,
         paymentRef,
         paidAmount: status === 'completed' ? totals.tendered : 0,
+        vatEnabled,
         status,
       });
 
@@ -394,17 +436,25 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </p>
           </div>
         ) : (
-          cart.map(({ product, qty }) => (
-            <div key={product.id} className="px-4 py-3 flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-900 truncate">{product.name}</p>
-                <p className="text-xs text-slate-500 font-mono tabular-nums">
-                  {formatBDT(product.sellingPrice)} × {qty}
-                  {product.vatRate > 0 ? ` · VAT ${product.vatRate}%` : ''}
-                </p>
+          cart.map(({ product, qty, unitPrice, vatRate }) => (
+            <div key={product.id} className="px-4 py-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="min-w-0 text-sm font-medium text-slate-900 truncate">{product.name}</p>
+                <button
+                  type="button"
+                  onClick={() => removeFromCart(product.id)}
+                  aria-label={`Remove ${product.name}`}
+                  className="min-h-[32px] min-w-[32px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+                ><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-end gap-2">
+                <label className="min-w-0 flex-1 text-[10px] font-medium text-slate-500">Sell rate (৳)
+                  <input type="number" min="0" max="10000000" step="0.01" value={unitPrice} onChange={(e)=>updateCartItem(product.id,{unitPrice:Math.min(10000000,Math.max(0,Number(e.target.value)||0))})} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-2 font-mono text-xs text-slate-900 focus:border-emerald-700 focus:outline-none" />
+                </label>
+                <label className={`w-[76px] text-[10px] font-medium ${vatEnabled?'text-slate-500':'text-slate-300'}`}>VAT %
+                  <input type="number" min="0" max="30" step="0.5" disabled={!vatEnabled} value={vatRate} onChange={(e)=>updateCartItem(product.id,{vatRate:Math.min(30,Math.max(0,Number(e.target.value)||0))})} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-2 font-mono text-xs text-slate-900 focus:border-emerald-700 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400" />
+                </label>
+                <div className="flex items-center gap-1 shrink-0 pb-0.5">
                 <button
                   type="button"
                   onClick={() => updateCartQty(product.id, -1)}
@@ -424,18 +474,10 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => removeFromCart(product.id)}
-                  aria-label={`Remove ${product.name}`}
-                  className="min-h-[36px] min-w-[32px] inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-red-700 hover:bg-red-50 cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="w-20 text-right font-mono text-sm font-semibold text-slate-900 tabular-nums shrink-0">
-                {formatBDT(product.sellingPrice * qty, false)}
+                </div>
+                <div className="w-[76px] pb-2 text-right font-mono text-xs font-semibold text-slate-900 tabular-nums shrink-0">
+                  {formatBDT(unitPrice * qty, false)}
+                </div>
               </div>
             </div>
           ))
@@ -492,7 +534,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span className="font-mono">-{formatBDT(totals.discountAmount)}</span>
             </div>
           )}
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <label className="inline-flex items-center gap-1.5 font-medium text-slate-700">
+              <input type="checkbox" checked={vatEnabled} onChange={(e)=>setVatEnabled(e.target.checked)} className="accent-emerald-700" />
+              <span>Apply VAT/TAX</span>
+            </label>
             <span>VAT (Mushak-6.3)</span>
             <span className="font-mono text-slate-900">{formatBDT(totals.vatAmount)}</span>
           </div>
@@ -732,6 +778,38 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           )}
         </div>
 
+        {/* Product and brand catalog views */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setProductView('products'); setSelectedBrand(null); }}
+            aria-pressed={productView === 'products'}
+            className={`min-h-[38px] inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${productView === 'products' ? 'border-[#0756A5] bg-[#0756A5] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+          >
+            <List className="h-4 w-4" />
+            <span>Product List</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setProductView('brands'); setSelectedBrand(null); }}
+            aria-pressed={productView === 'brands'}
+            className={`min-h-[38px] inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${productView === 'brands' ? 'border-[#0756A5] bg-[#0756A5] text-white shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+          >
+            <Folder className="h-4 w-4" />
+            <span>Brand List</span>
+          </button>
+          {productView === 'brands' && selectedBrand && (
+            <button
+              type="button"
+              onClick={() => setSelectedBrand(null)}
+              className="min-h-[38px] inline-flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-[#0756A5] hover:bg-blue-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>All brands · {brandFolders.find((folder) => folder.key === selectedBrand)?.name || 'Brand'}</span>
+            </button>
+          )}
+        </div>
+
         {/* Held Bills Bar */}
         {heldSales.length > 0 && (
           <div className="bg-amber-50/70 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 overflow-x-auto">
@@ -785,7 +863,37 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               </button>
             </div>
           </div>
-        ) : filteredProducts.length === 0 ? (
+        ) : productView === 'brands' && !selectedBrand ? (
+          brandFolders.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">
+              No brand folders match the current search or category.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3 xl:grid-cols-4 lg:pb-4">
+              {brandFolders.map((folder) => (
+                <button
+                  key={folder.key}
+                  type="button"
+                  onClick={() => setSelectedBrand(folder.key)}
+                  className="group min-h-[124px] rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-[#0756A5]/40 hover:shadow-md"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    {folder.name === 'Unbranded'
+                      ? <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-[#0756A5] group-hover:bg-blue-100"><Folder className="h-5 w-5" /></span>
+                      : <BrandLogo name={folder.name} imageDataUrl={folder.logoDataUrl} logoUrl={folder.logoUrl} className="h-10 w-10" />}
+                    <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
+                      {folder.products.length}
+                    </span>
+                  </div>
+                  <p className="mt-3 truncate text-sm font-bold text-slate-900">{folder.name}</p>
+                  <p className="mt-1 truncate text-[11px] text-slate-500">
+                    {folder.products.slice(0, 2).map((product) => product.name).join(' · ')}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )
+        ) : brandProducts.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
             <p className="text-sm font-medium text-slate-700">
               No products matched "{searchQuery}".
@@ -803,7 +911,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 pb-24 lg:pb-4">
-            {filteredProducts.map((product) => {
+            {brandProducts.map((product) => {
               const inCartQty = cartMap.get(product.id) || 0;
               const outOfStock = product.stock <= 0;
               const lowStock = !outOfStock && product.stock <= product.reorderLevel;
@@ -823,6 +931,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   }`}
                 >
                   <div>
+                    {product.imageDataUrl && <img src={product.imageDataUrl} alt="" className="mb-2 h-20 w-full rounded-lg object-cover" />}
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[11px] font-medium text-slate-500 truncate">
                         {product.category} · {product.unit}

@@ -1,4 +1,4 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { DbTimestamp as Timestamp } from '../mysqlDataStore';
 
 export type PlanId = 'starter' | 'growth' | 'enterprise';
 export type PaymentMethod = 'cash' | 'bkash' | 'nagad' | 'rocket' | 'card' | 'split' | 'credit';
@@ -62,6 +62,11 @@ export interface Product {
   barcode: string;
   sku: string;
   category: string;
+  brand?: string;
+  brandLogoDataUrl?: string;
+  brandLogoUrl?: string;
+  description?: string;
+  imageDataUrl?: string;
   unit: string;
   costPrice: number;
   sellingPrice: number;
@@ -100,6 +105,7 @@ export interface Sale {
   subtotal: number;
   discountAmount: number;
   vatAmount: number;
+  vatEnabled?: boolean;
   totalAmount: number;
   paidAmount: number;
   changeAmount: number;
@@ -337,6 +343,8 @@ export const STAFF_ROLES: { id: StaffRole; label: string; permissions: string }[
 export interface CartItem {
   product: Product;
   qty: number;
+  unitPrice: number;
+  vatRate: number;
 }
 
 export interface SaasPlanSpec {
@@ -400,12 +408,52 @@ export const SAAS_PLANS: SaasPlanSpec[] = [
 
 export const PRODUCT_CATEGORIES = [
   'Groceries',
+  'Rice & Grains',
+  'Pulses & Lentils',
+  'Flour & Baking',
   'Oil & Spices',
+  'Cooking Oil',
+  'Salt & Sugar',
+  'Spices & Seasonings',
+  'Pickles & Chutneys',
+  'Sauces & Condiments',
+  'Tea & Coffee',
   'Dairy & Bakery',
+  'Dairy',
+  'Bakery',
+  'Eggs',
   'Beverages',
+  'Bottled Water',
   'Snacks',
+  'Biscuits & Cookies',
+  'Sweets & Confectionery',
+  'Chocolate & Candy',
+  'Instant Foods & Noodles',
+  'Snacks & Confectionery',
+  'Frozen Foods',
+  'Meat & Fish',
+  'Fruits & Vegetables',
+  'Canned & Packaged Foods',
   'Personal Care',
+  'Oral Care',
+  'Hair Care & Cosmetics',
+  'Feminine Care',
+  'Baby Care',
+  'Baby Food & Formula',
   'Household',
+  'Household Cleaning',
+  'Laundry & Dishwashing',
+  'Paper & Tissue',
+  'Kitchenware',
+  'Disposable Items',
+  'Stationery & Books',
+  'Mobile Recharge & Accessories',
+  'Medicines & Health Care',
+  'Tobacco & Smoking',
+  'Pet Food & Supplies',
+  'Religious Items',
+  'Seasonal Products',
+  'Other',
 ] as const;
 
 export const PAYMENT_METHODS: { id: PaymentMethod; label: string; short: string; needsRef: boolean }[] = [

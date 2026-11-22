@@ -1,435 +1,284 @@
 import React, { useState } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
-  Barcode,
-  Check,
-  Printer,
-  Smartphone,
+  BarChart3,
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  KeyRound,
+  Mail,
+  Phone,
+  ShieldCheck,
   Store,
-  TrendingUp,
 } from 'lucide-react';
-import { SAAS_PLANS, formatBDT } from '../types/pos';
+import type { SignupFormData } from '../authClient';
+
+type AuthMode = 'login' | 'signup';
+type LoginType = 'owner' | 'sr';
 
 interface LandingAuthProps {
-  onSignIn: () => Promise<void>;
+  onEmailSignIn: (email: string, password: string) => Promise<void>;
+  onSrPinSignIn: (businessPhone:string, staffPhone:string, pin:string) => Promise<void>;
+  onSignUp: (details: SignupFormData) => Promise<void>;
+  onClearError: () => void;
   signingIn: boolean;
   authError: string | null;
 }
 
+const inputClass =
+  'w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 placeholder:text-slate-400 shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10';
+
 export const LandingAuth: React.FC<LandingAuthProps> = ({
-  onSignIn,
+  onEmailSignIn,
+  onSrPinSignIn,
+  onSignUp,
+  onClearError,
   signingIn,
   authError,
 }) => {
-  const [heroImgFailed, setHeroImgFailed] = useState(false);
-  const [catalogImgFailed, setCatalogImgFailed] = useState(false);
-  const [avatarImgFailed, setAvatarImgFailed] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [loginType, setLoginType] = useState<LoginType>('owner');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [staffPhone, setStaffPhone] = useState('');
+  const [pin, setPin] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [businessType, setBusinessType] = useState('grocery');
+  const [address, setAddress] = useState('');
+  const [district, setDistrict] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setNotice('');
+    setFormError('');
+    try {
+      if (mode === 'signup') {
+        if (password !== confirmPassword) {
+          setFormError('দুটি পাসওয়ার্ড মিলছে না।');
+          return;
+        }
+        await onSignUp({
+          name: name.trim(), email: email.trim(), phone: phone.trim(),
+          businessName: businessName.trim(), businessType, address: address.trim(),
+          district: district.trim(), password,
+        });
+        setPassword('');
+        setConfirmPassword('');
+        setNotice('সাইনআপ অনুরোধ পাঠানো হয়েছে। সুপার অ্যাডমিন অনুমোদন করলে এই ইমেইল ও পাসওয়ার্ড দিয়ে সাইন ইন করতে পারবেন।');
+      } else if(loginType==='sr') await onSrPinSignIn(businessPhone.trim(),staffPhone.trim(),pin);
+      else await onEmailSignIn(email.trim(), password);
+    } catch {
+      // The parent translates API errors and displays them in this form.
+    }
+  };
+
+  const heading = mode === 'signup' ? 'অ্যাকাউন্টের অনুরোধ পাঠান' : 'স্বাগতম';
+  const subheading = mode === 'signup'
+    ? 'আপনার ও দোকানের তথ্য দিন। সুপার অ্যাডমিন যাচাই করে অ্যাকাউন্ট চালু করবেন।'
+    : loginType==='sr' ? 'দোকানের ফোন, আপনার মোবাইল নম্বর ও নির্ধারিত PIN ব্যবহার করুন।' : 'আপনার অনুমোদিত অ্যাকাউন্ট দিয়ে সাইন ইন করুন।';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-      {/* Top Bar Contract: Exactly 3 zones separated by gap-8 */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-          <a
-            href="#top"
-            className="inline-flex items-center gap-2.5 font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
-          >
-            <img
-              src="/assets/aistudio/M_S_Khan_Brothers_Gold-Blue_Badge_cceec1db.png"
-              alt="M/S Khan Brothers Logo"
-              className="w-8 h-8 rounded-full bg-white object-contain border border-slate-200 shrink-0"
-            />
-            <span>M/S Khan Brothers</span>
-          </a>
+    <main className="min-h-screen bg-[#f4f7f6] text-slate-900 lg:grid lg:grid-cols-[1.05fr_0.95fr]">
+      <section className="relative hidden min-h-screen overflow-hidden bg-[#0b1820] p-12 text-white lg:flex lg:flex-col lg:justify-between xl:p-16">
+        <div className="absolute inset-0 opacity-25">
+          <img src="/src/assets/images/hero_smart_pos_1795278225917.jpg" alt="" className="h-full w-full object-cover" />
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-br from-[#0b1820]/95 via-[#102a2a]/85 to-emerald-950/70" />
 
-          <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600">
-            <a
-              href="#capabilities"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
-            >
-              Capabilities
-            </a>
-            <a
-              href="#bangladesh"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
-            >
-              Bangladesh Ready
-            </a>
-            <a
-              href="#pricing"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
-            >
-              Pricing
-            </a>
-            <a
-              href="#customers"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap shrink-0"
-            >
-              Stores
-            </a>
-          </nav>
-
-          <div className="shrink-0">
-            <button
-              type="button"
-              onClick={() => void onSignIn()}
-              disabled={signingIn}
-              className="min-h-[40px] px-4 py-2 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              {signingIn ? 'Signing in...' : 'Sign in with Google'}
-            </button>
+        <div className="relative z-10 flex items-center gap-3">
+          <img
+            src="/assets/aistudio/M_S_Khan_Brothers_Gold-Blue_Badge_cceec1db.png"
+            alt="M/S Khan Brothers"
+            className="h-11 w-11 rounded-full border border-white/20 bg-white object-contain"
+          />
+          <div>
+            <p className="font-display text-sm font-bold tracking-wide">M/S Khan Brothers</p>
+            <p className="mt-0.5 text-xs text-emerald-100/70">SMART POS · RANGAMATI</p>
           </div>
         </div>
-      </header>
 
-      <main id="top" className="flex-1">
-        {/* Balanced 2-Column Hero */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-12 lg:pt-16 lg:pb-16">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
-            <div className="lg:col-span-6 flex flex-col justify-center space-y-6">
-              <p className="text-xs font-medium text-slate-500">
-                Cloud Super Shop POS &amp; Distribution ERP · Mobile &amp; Desktop Browser
-              </p>
+        <div className="relative z-10 max-w-xl py-12">
+          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/20 bg-emerald-200/10 px-3 py-1.5 text-xs font-medium text-emerald-100">
+            <ShieldCheck className="h-3.5 w-3.5" /> আপনার ব্যবসা, এক নিরাপদ workspace
+          </span>
+          <h1 className="mt-7 font-display text-4xl font-bold leading-tight tracking-tight xl:text-5xl">
+            দোকানের হিসাব রাখুন,
+            <span className="block text-emerald-300">সহজ ও স্মার্টভাবে।</span>
+          </h1>
+          <p className="mt-5 max-w-lg text-base leading-7 text-slate-200/80">
+            বিক্রি, স্টক, বাকি খাতা এবং শাখার কাজ—সব এক জায়গায়। সাইন ইন করলেই আপনার POS workspace প্রস্তুত।
+          </p>
+          <div className="mt-10 grid max-w-lg grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm">
+              <Store className="h-5 w-5 text-emerald-300" />
+              <p className="mt-3 text-sm font-semibold">দ্রুত POS বিলিং</p>
+              <p className="mt-1 text-xs leading-5 text-slate-300/70">বারকোড, BDT পেমেন্ট ও রসিদ</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-sm">
+              <BarChart3 className="h-5 w-5 text-emerald-300" />
+              <p className="mt-3 text-sm font-semibold">লাইভ ব্যবসার হিসাব</p>
+              <p className="mt-1 text-xs leading-5 text-slate-300/70">স্টক, বিক্রি ও বাকি এক নজরে</p>
+            </div>
+          </div>
+        </div>
 
-              <h1 className="font-display text-3xl sm:text-4xl lg:text-[2.85rem] font-bold tracking-tight text-slate-900 leading-[1.12] [text-wrap:balance]">
-                Smart checkout, SR field orders, and due ledgers for modern Bangladeshi retail &amp;
-                distribution.
-              </h1>
+        <p className="relative z-10 text-xs text-slate-300/55">© {new Date().getFullYear()} M/S Khan Brothers · Mainimukh Bazar, Rangamati</p>
+      </section>
 
-              <p className="text-base text-slate-600 leading-relaxed max-w-xl">
-                Run barcode billing, bKash and Nagad tenders, Mushak-6.3 VAT receipts, field SR
-                market order entry, commission tracking, and customer/supplier due (baki) ledgers
-                from any phone or PC browser.
-              </p>
+      <section className={`flex min-h-screen justify-center px-4 py-8 sm:px-8 lg:px-10 ${mode === 'signup' ? 'items-start lg:py-10' : 'items-center'}`}>
+        <div className="w-full max-w-[440px]">
+          <div className="mb-8 flex items-center gap-3 lg:hidden">
+            <img src="/assets/aistudio/M_S_Khan_Brothers_Gold-Blue_Badge_cceec1db.png" alt="M/S Khan Brothers" className="h-10 w-10 rounded-full border border-slate-200 bg-white object-contain" />
+            <div>
+              <p className="font-display text-sm font-bold">M/S Khan Brothers</p>
+              <p className="text-[11px] text-slate-500">SMART POS · RANGAMATI</p>
+            </div>
+          </div>
 
-              {authError && (
-                <div className="p-3.5 text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg">
-                  {authError}
-                </div>
+          <div className="rounded-[28px] border border-white bg-white p-6 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.24)] sm:p-9">
+            {mode !== 'login' && (
+              <button type="button" onClick={() => { setMode('login'); setNotice(''); onClearError(); }} className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-900">
+                <ArrowLeft className="h-4 w-4" /> লগইনে ফিরে যান
+              </button>
+            )}
+
+            <div className="mb-7">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                <Store className="h-5 w-5" />
+              </div>
+              <h2 className="font-display text-2xl font-bold tracking-tight text-slate-950">{heading}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">{subheading}</p>
+            </div>
+
+            {mode==='login' && <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+              <button type="button" onClick={()=>setLoginType('owner')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='owner'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>মালিক / Admin</button>
+              <button type="button" onClick={()=>setLoginType('sr')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='sr'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>SR PIN Login</button>
+            </div>}
+
+            <form onSubmit={(event) => void submit(event)} className="space-y-4">
+              {mode === 'signup' && (
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-700">আপনার নাম</span>
+                  <span className="relative block">
+                    <Store className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input className={inputClass} autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="নাম লিখুন" required />
+                  </span>
+                </label>
               )}
 
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                <button
-                  type="button"
-                  onClick={() => void onSignIn()}
-                  disabled={signingIn}
-                  className="min-h-[48px] inline-flex items-center justify-center gap-2.5 px-6 py-3 text-sm font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-                >
-                  <span>{signingIn ? 'Opening Google Sign-In...' : 'Launch Your Cloud Store'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                <a
-                  href="#pricing"
-                  className="min-h-[48px] inline-flex items-center justify-center px-5 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors whitespace-nowrap"
-                >
-                  Compare BDT Plans
-                </a>
-              </div>
+              {mode==='login' && loginType==='sr' && <>
+                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">দোকানের নিবন্ধিত ফোন</span><span className="relative block"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="tel" inputMode="tel" autoComplete="tel" value={businessPhone} onChange={(e)=>setBusinessPhone(e.target.value)} placeholder="দোকানের ফোন নম্বর" required/></span></label>
+                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">SR-এর মোবাইল নম্বর</span><span className="relative block"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="tel" inputMode="tel" autoComplete="tel" value={staffPhone} onChange={(e)=>setStaffPhone(e.target.value)} placeholder="SR-এর নিবন্ধিত মোবাইল" required/></span></label>
+                <label className="block"><span className="mb-1.5 block text-xs font-semibold text-slate-700">আপনার PIN</span><span className="relative block"><KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/><input className={inputClass} type="password" inputMode="numeric" autoComplete="current-password" minLength={4} maxLength={10} pattern="[0-9]{4,10}" value={pin} onChange={(e)=>setPin(e.target.value.replace(/\D/g,''))} placeholder="৪–১০ সংখ্যার PIN" required/></span></label>
+              </>}
 
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 pt-1">
-                <span>GS1 894 Barcode Ready</span>
-                <span aria-hidden="true">·</span>
-                <span>80mm Thermal Print</span>
-                <span aria-hidden="true">·</span>
-                <span>No hardware lock-in</span>
-              </div>
-            </div>
+              {(mode==='signup' || (mode==='login' && loginType==='owner')) && <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">ইমেইল</span>
+                <span className="relative block">
+                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input className={inputClass} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+                </span>
+              </label>}
 
-            <div className="lg:col-span-6">
-              <div className="h-full min-h-[280px] sm:min-h-[380px] rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-100 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.18)]">
-                {!heroImgFailed ? (
-                  <img
-                    src="/src/assets/images/hero_smart_pos_1795278225917.jpg"
-                    alt="Modern Bangladeshi super shop checkout counter with touchscreen POS terminal and barcode scanner"
-                    referrerPolicy="no-referrer"
-                    onError={() => setHeroImgFailed(true)}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-slate-100 to-emerald-50">
-                    <Store className="w-10 h-10 text-emerald-700 mb-3" />
-                    <p className="font-display font-semibold text-slate-800">
-                      BazarGrid Smart Checkout Terminal
-                    </p>
+              {mode === 'signup' && (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-semibold text-slate-700">মোবাইল নম্বর</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10" type="tel" autoComplete="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="01XXXXXXXXX" required />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-semibold text-slate-700">দোকান/প্রতিষ্ঠানের নাম</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10" autoComplete="organization" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="আপনার দোকানের নাম" required />
+                    </label>
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
 
-          {/* 4-Column Commercial Metrics Strip */}
-          <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 bg-[#0B1320] text-white border border-slate-800 rounded-2xl divide-y sm:divide-y-0 sm:divide-x divide-slate-800 shadow-[0_8px_24px_-10px_rgba(15,23,42,0.3)]">
-            <div className="p-5">
-              <p className="font-mono text-2xl font-bold text-emerald-400 tabular-nums">&lt; 2.4s</p>
-              <p className="mt-1 text-xs text-slate-400">Average barcode scan-to-receipt checkout</p>
-            </div>
-            <div className="p-5">
-              <p className="font-mono text-2xl font-bold text-white tabular-nums">7 Tenders</p>
-              <p className="mt-1 text-xs text-slate-400">Cash, bKash, Nagad, Rocket, Card, Split &amp; Baki</p>
-            </div>
-            <div className="p-5">
-              <p className="font-mono text-2xl font-bold text-white tabular-nums">SR &amp; Ledger</p>
-              <p className="mt-1 text-xs text-slate-400">Field order routes, challans &amp; due book</p>
-            </div>
-            <div className="p-5">
-              <p className="font-mono text-2xl font-bold text-white tabular-nums">100% Web</p>
-              <p className="mt-1 text-xs text-slate-400">Works on Android, iOS, tablet &amp; PC browsers</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Capabilities Section */}
-        <section id="capabilities" className="border-t border-slate-200 bg-white py-16">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl">
-              <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 [text-wrap:balance]">
-                Built for high-footfall grocery counters and on-the-go store owners
-              </h2>
-              <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
-                Every workflow connects counter speed directly to accurate accounting and real-time
-                stock visibility.
-              </p>
-            </div>
-
-            <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="p-6 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                <Barcode className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-display text-base font-semibold text-slate-900">
-                  USB &amp; Bluetooth Barcode Billing
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Scan standard 894 Bangladesh EAN-13 barcodes directly in the browser with instant
-                  line totals, held carts, and quick BDT note tender keys.
-                </p>
-              </div>
-
-              <div className="p-6 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                <Smartphone className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-display text-base font-semibold text-slate-900">
-                  Mobile &amp; Desktop Ready
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Cashiers check out on desktop counters while managers restock aisles, check
-                  bKash totals, or ring up queues from any smartphone browser.
-                </p>
-              </div>
-
-              <div className="p-6 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                <Printer className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-display text-base font-semibold text-slate-900">
-                  Mushak-6.3 Thermal Receipts
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Print 80mm thermal receipts with your NBR BIN number, item-level VAT calculation,
-                  bKash TrxID reference, and change due—or copy SMS summaries.
-                </p>
-              </div>
-
-              <div className="p-6 border border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                <TrendingUp className="w-5 h-5 text-emerald-700" />
-                <h3 className="font-display text-base font-semibold text-slate-900">
-                  Live Stock &amp; Profit Ledger
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Every sale deducts stock atomically and every refund restores inventory. Track
-                  low-stock alerts, daily revenue, and gross margins in BDT.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Bangladesh Retail Fit + Attributable Testimonial */}
-        <section id="bangladesh" className="border-t border-slate-200 bg-slate-50 py-16">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-stretch">
-              <div className="lg:col-span-5">
-                <div className="h-full min-h-[260px] rounded-xl overflow-hidden border border-slate-200 bg-white">
-                  {!catalogImgFailed ? (
-                    <img
-                      src="/src/assets/images/category_grocery_staples_1795278225878.jpg"
-                      alt="Fresh grocery staples including rice, cooking oil, tea, and greens"
-                      referrerPolicy="no-referrer"
-                      onError={() => setCatalogImgFailed(true)}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-500 text-sm">
-                      Bangladesh Grocery Catalog Ready
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
-                <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 [text-wrap:balance]">
-                  Pre-configured for Dhaka, Chattogram, and nationwide retail operations
-                </h2>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                  <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                    <p className="text-sm font-semibold text-slate-900">One-Click BD Starter Catalog</p>
-                    <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-                      Load 18 essential Bangladeshi super shop SKUs (rice, oil, tea, milk, spices,
-                      toiletries) with 894 barcodes in one click to start testing immediately.
-                    </p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-semibold text-slate-700">ব্যবসার ধরন</span>
+                      <select className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10" value={businessType} onChange={(e) => setBusinessType(e.target.value)} required>
+                        <option value="grocery">মুদি/গ্রোসারি</option><option value="supermarket">সুপারশপ</option><option value="wholesale">পাইকারি/ডিস্ট্রিবিউশন</option><option value="pharmacy">ফার্মেসি</option><option value="other">অন্যান্য</option>
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-semibold text-slate-700">জেলা</span>
+                      <input className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10" autoComplete="address-level1" value={district} onChange={(e) => setDistrict(e.target.value)} placeholder="জেলার নাম" required />
+                    </label>
                   </div>
-                  <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                    <p className="text-sm font-semibold text-slate-900">MFS &amp; Cash Reconciliation</p>
-                    <p className="mt-1 text-xs text-slate-600 leading-relaxed">
-                      Record bKash, Nagad, and Rocket transaction references per invoice and review
-                      exact end-of-day tender totals by payment channel.
-                    </p>
-                  </div>
-                </div>
 
-                {/* Attributable Customer Testimonial */}
-                <div
-                  id="customers"
-                  className="p-5 bg-white border border-slate-200 rounded-xl flex items-start gap-4"
-                >
-                  <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-200 shrink-0 bg-slate-100">
-                    {!avatarImgFailed ? (
-                      <img
-                        src="/src/assets/images/avatar_shop_owner_1795278225981.jpg"
-                        alt="Farhana Rahman, Managing Partner at Uttara Fresh Mart"
-                        referrerPolicy="no-referrer"
-                        onError={() => setAvatarImgFailed(true)}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-semibold text-slate-600">
-                        FR
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-700 leading-relaxed">
-                      “Before switching to BazarGrid, evening rush queues backed up whenever our
-                      cashier checked bKash screenshots manually. Cutting checkout time under 15
-                      seconds per basket lifted our peak-hour throughput by 34% across two Uttara
-                      outlets.”
-                    </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      <span className="font-semibold text-slate-900">Farhana Rahman</span> ·
-                      Managing Partner, Uttara Fresh Mart, Dhaka
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-semibold text-slate-700">দোকানের ঠিকানা</span>
+                    <textarea className="min-h-[76px] w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-600/10" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="বাজার/এলাকা, উপজেলা" required />
+                  </label>
+                </>
+              )}
 
-        {/* SaaS Pricing in BDT */}
-        <section id="pricing" className="border-t border-slate-200 bg-white py-16">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl">
-              <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-                Transparent monthly SaaS plans in BDT
-              </h2>
-              <p className="mt-2 text-sm text-slate-600">
-                Start immediately with your Google account. Switch plans anytime inside Shop
-                Settings as your branch count grows.
-              </p>
-            </div>
-
-            <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6">
-              {SAAS_PLANS.map((plan) => {
-                const isPopular = plan.id === 'growth';
-                return (
-                  <div
-                    key={plan.id}
-                    className={`p-6 rounded-xl border flex flex-col justify-between ${
-                      isPopular
-                        ? 'border-emerald-700 bg-emerald-50/30'
-                        : 'border-slate-200 bg-white'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <h3 className="font-display text-lg font-bold text-slate-900">
-                          {plan.name}
-                        </h3>
-                        {isPopular && (
-                          <span className="text-xs font-semibold text-emerald-700">
-                            Most chosen
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs text-slate-500">{plan.audience}</p>
-
-                      <div className="mt-5 pb-5 border-b border-slate-200">
-                        <span className="font-mono text-3xl font-bold text-slate-900 tabular-nums">
-                          {formatBDT(plan.monthlyPriceBdt, false)}
-                        </span>
-                        <span className="text-xs text-slate-500"> / month</span>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-3 gap-2 text-xs text-slate-600 pb-4 border-b border-slate-100">
-                        <div>
-                          <p className="font-mono font-semibold text-slate-900 tabular-nums">
-                            {plan.maxSkus.toLocaleString()}
-                          </p>
-                          <p className="text-slate-500">SKUs</p>
-                        </div>
-                        <div>
-                          <p className="font-mono font-semibold text-slate-900 tabular-nums">
-                            {plan.maxBranches}
-                          </p>
-                          <p className="text-slate-500">Branches</p>
-                        </div>
-                        <div>
-                          <p className="font-mono font-semibold text-slate-900 tabular-nums">
-                            {(plan.maxMonthlyInvoices / 1000).toFixed(0)}k
-                          </p>
-                          <p className="text-slate-500">Bills/mo</p>
-                        </div>
-                      </div>
-
-                      <ul className="mt-4 space-y-2.5 text-sm text-slate-700">
-                        {plan.highlights.map((item) => (
-                          <li key={item} className="flex items-start gap-2.5">
-                            <Check className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => void onSignIn()}
-                      disabled={signingIn}
-                      className={`mt-6 w-full min-h-[44px] px-4 py-2.5 text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
-                        isPopular
-                          ? 'bg-emerald-700 text-white hover:bg-emerald-800'
-                          : 'bg-slate-900 text-white hover:bg-slate-800'
-                      }`}
-                    >
-                      Start with {plan.name}
+              {(mode==='signup' || (mode==='login' && loginType==='owner')) && <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-700">পাসওয়ার্ড</span>
+                  <span className="relative block">
+                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input className={`${inputClass} pr-12`} type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="কমপক্ষে ৮ অক্ষর" required />
+                    <button type="button" aria-label={showPassword ? 'পাসওয়ার্ড লুকান' : 'পাসওয়ার্ড দেখান'} onClick={() => setShowPassword((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      </main>
+                  </span>
+                </label>}
 
-      <footer className="border-t border-slate-200 bg-slate-50 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p className="inline-flex items-center gap-2">
-            <img
-              src="/assets/aistudio/M_S_Khan_Brothers_Gold-Blue_Badge_cceec1db.png"
-              alt="M/S Khan Brothers"
-              className="w-5 h-5 rounded-full object-contain"
-            />
-            <span>© {new Date().getFullYear()} M/S Khan Brothers · Mainimukh Bazar, Dongudu, Rangamati</span>
-          </p>
-          <p>BDT Currency · Mushak-6.3 VAT Ready · Mobile &amp; Desktop Browser POS</p>
+              {mode === 'signup' && (
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-700">পাসওয়ার্ড নিশ্চিত করুন</span>
+                  <span className="relative block">
+                    <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input className={inputClass} type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="পাসওয়ার্ড আবার লিখুন" required />
+                  </span>
+                </label>
+              )}
+
+              {formError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs text-rose-700">{formError}</p>}
+              {authError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs leading-5 text-rose-700">{authError}</p>}
+              {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-xs leading-5 text-emerald-800">{notice}</p>}
+
+              <button type="submit" disabled={signingIn} className="group flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white shadow-[0_8px_18px_-8px_rgba(4,120,87,0.7)] transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60">
+                {signingIn ? 'অপেক্ষা করুন…' : mode === 'signup' ? 'অনুমোদনের অনুরোধ পাঠান' : 'সাইন ইন করুন'}
+                {!signingIn && <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}
+              </button>
+            </form>
+
+            {mode === 'login' && loginType==='owner' && (
+              <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><p className="text-xs font-bold text-emerald-900">ডেমো লগইন</p><p className="mt-1 text-[11px] leading-5 text-emerald-800">demo@kbshop.example · Demo@12345</p><p className="text-[10px] text-emerald-700">এই ডেমো ব্রাউজারেই চলে; ডাটাবেজ লাগে না।</p></div>
+                  <button type="button" disabled={signingIn} onClick={() => { setEmail('demo@kbshop.example'); setPassword('Demo@12345'); void onEmailSignIn('demo@kbshop.example','Demo@12345').catch(() => undefined); }} className="shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">ডেমো চালান</button>
+                </div>
+              </div>
+            )}
+
+            <p className="mt-6 text-center text-sm text-slate-500">
+                {mode === 'signup' ? 'আগে থেকেই অ্যাকাউন্ট আছে?' : loginType==='sr' ? 'ব্যবসার মালিক?' : 'নতুন এখানে?'}{' '}
+                <button type="button" onClick={() => { if(loginType==='sr' && mode==='login') setLoginType('owner'); else { setMode(mode === 'signup' ? 'login' : 'signup'); setLoginType('owner'); } setNotice(''); onClearError(); }} className="font-semibold text-emerald-700 hover:text-emerald-800">
+                  {mode === 'signup' ? 'সাইন ইন করুন' : loginType==='sr' ? 'মালিক লগইন' : 'অ্যাকাউন্ট তৈরি করুন'}
+                </button>
+            </p>
+          </div>
+          <p className="mt-5 text-center text-[11px] leading-5 text-slate-400">সাইন ইন করলে আপনার POS workspace-এর নিরাপদ প্রবেশাধিকার চালু হবে।</p>
+          <a
+            href="https://anzhitech.org/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 block text-center text-[11px] font-medium text-slate-500 transition hover:text-emerald-700 hover:underline"
+          >
+            Design &amp; Developed By Eng GH Shrabon, AnZ Hi-Tech Soultion
+          </a>
         </div>
-      </footer>
-    </div>
+      </section>
+    </main>
   );
 };

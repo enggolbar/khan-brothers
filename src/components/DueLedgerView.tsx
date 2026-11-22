@@ -29,6 +29,7 @@ interface DueLedgerViewProps {
   customers: Customer[];
   suppliers: Supplier[];
   ledgerEntries: LedgerEntry[];
+  isSrPortal?: boolean;
 }
 
 const PAY_METHODS: { id: LedgerPaymentMethod; label: string }[] = [
@@ -52,6 +53,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
   customers,
   suppliers,
   ledgerEntries,
+  isSrPortal = false,
 }) => {
   const [tab, setTab] = useState<'customers' | 'suppliers' | 'statement'>('customers');
   const [search, setSearch] = useState('');
@@ -252,12 +254,11 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
             Due &amp; Baki Ledger (Customer &amp; Supplier)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Track market customer/retailer credit balances, supplier payables, cash/MFS
-            settlements, and full audit statements.
+            {isSrPortal ? 'আপনার নির্ধারিত রুটের খুচরা বিক্রেতাদের বাকি দেখুন।' : 'Track market customer/retailer credit balances, supplier payables, cash/MFS settlements, and full audit statements.'}
           </p>
         </div>
 
-        <button
+        {!isSrPortal && <button
           type="button"
           onClick={handleExportLedgerCsv}
           disabled={filteredStatement.length === 0}
@@ -265,7 +266,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
         >
           <Download className="w-4 h-4" />
           <span>Export Statement CSV</span>
-        </button>
+        </button>}
       </div>
 
       {notice && (
@@ -275,7 +276,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
       )}
 
       {/* 4-Column Commercial KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 ${isSrPortal ? 'lg:grid-cols-2' : 'lg:grid-cols-4'} gap-4`}>
         <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <p className="text-xs font-medium text-slate-500">Customer Due (Receivable)</p>
           <p className="mt-1.5 font-mono text-xl sm:text-2xl font-bold text-red-700 tabular-nums">
@@ -285,7 +286,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
             {summary.customerDueCount} accounts with baki
           </p>
         </div>
-        <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        {!isSrPortal && <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <p className="text-xs font-medium text-slate-500">Supplier Due (Payable)</p>
           <p className="mt-1.5 font-mono text-xl sm:text-2xl font-bold text-amber-700 tabular-nums">
             {formatBDT(summary.supplierPayable, false)}
@@ -293,7 +294,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
           <p className="mt-1.5 text-[11px] text-slate-500">
             {summary.supplierDueCount} suppliers pending
           </p>
-        </div>
+        </div>}
         <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <p className="text-xs font-medium text-slate-500">Cash Collected (Market)</p>
           <p className="mt-1.5 font-mono text-xl sm:text-2xl font-bold text-emerald-700 tabular-nums">
@@ -301,13 +302,13 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
           </p>
           <p className="mt-1.5 text-[11px] text-slate-500">Recorded collections</p>
         </div>
-        <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        {!isSrPortal && <div className="p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
           <p className="text-xs font-medium text-slate-500">Paid to Suppliers</p>
           <p className="mt-1.5 font-mono text-xl sm:text-2xl font-bold text-slate-900 tabular-nums">
             {formatBDT(summary.totalSupplierPaid, false)}
           </p>
           <p className="mt-1.5 text-[11px] text-slate-500">Cash, bKash, Nagad &amp; Bank</p>
-        </div>
+        </div>}
       </div>
 
       {/* Tab Switcher + Filters */}
@@ -322,7 +323,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
           >
             Customer Due ({summary.customerDueCount})
           </button>
-          <button
+          {!isSrPortal && <button
             type="button"
             onClick={() => setTab('suppliers')}
             className={`min-h-[36px] px-3.5 py-1.5 text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer ${
@@ -330,8 +331,8 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
             }`}
           >
             Supplier Cash &amp; Due ({summary.supplierDueCount})
-          </button>
-          <button
+          </button>}
+          {!isSrPortal && <button
             type="button"
             onClick={() => setTab('statement')}
             className={`min-h-[36px] px-3.5 py-1.5 text-xs font-semibold rounded-md whitespace-nowrap cursor-pointer ${
@@ -339,7 +340,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
             }`}
           >
             Full Statement ({ledgerEntries.length})
-          </button>
+          </button>}
         </div>
 
         <div className="flex items-center gap-2 flex-1 md:max-w-md">
@@ -369,7 +370,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
       </div>
 
       {/* Customer Due Tab */}
-      {tab === 'customers' && (
+      {(tab === 'customers' || isSrPortal) && (
         <div className="bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
           {filteredCustomers.length === 0 ? (
             <div className="p-10 text-center space-y-2">
@@ -422,7 +423,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="inline-flex items-center gap-1.5">
-                            {due > 0 && (
+                            {!isSrPortal && due > 0 && (
                               <button
                                 type="button"
                                 onClick={() => openModal('collect_customer', { customer: c })}
@@ -431,7 +432,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
                                 Collect Due
                               </button>
                             )}
-                            <button
+                            {!isSrPortal && <button
                               type="button"
                               onClick={() => openModal('add_customer_due', { customer: c })}
                               title="Add opening / previous baki"
@@ -439,14 +440,14 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
                             >
                               <Plus className="w-3 h-3" />
                               <span>Due</span>
-                            </button>
-                            <button
+                            </button>}
+                            {!isSrPortal && <button
                               type="button"
                               onClick={() => viewPartyStatement(c.id)}
                               className="min-h-[32px] px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 cursor-pointer"
                             >
                               History
-                            </button>
+                            </button>}
                           </div>
                         </td>
                       </tr>
@@ -460,7 +461,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
       )}
 
       {/* Supplier Cash & Due Tab */}
-      {tab === 'suppliers' && (
+      {!isSrPortal && tab === 'suppliers' && (
         <div className="bg-white border border-slate-200/90 rounded-2xl shadow-[0_1px_2px_rgba(15,23,42,0.04)] overflow-hidden">
           {filteredSuppliers.length === 0 ? (
             <div className="p-10 text-center space-y-2">
@@ -520,7 +521,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
                               Pay Supplier
                             </button>
                           )}
-                          <button
+                          {!isSrPortal && <button
                             type="button"
                             onClick={() => openModal('add_supplier_due', { supplier: s })}
                             title="Add opening supplier payable"
@@ -528,7 +529,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
                           >
                             <Plus className="w-3 h-3" />
                             <span>Due</span>
-                          </button>
+                          </button>}
                           <button
                             type="button"
                             onClick={() => viewPartyStatement(s.id)}
@@ -548,7 +549,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
       )}
 
       {/* Full Statement Tab */}
-      {tab === 'statement' && (
+      {!isSrPortal && tab === 'statement' && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             {(['all', 'customers', 'suppliers'] as const).map((f) => (
@@ -646,7 +647,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
       )}
 
       {/* Action Modal (Collect / Pay / Opening Due) */}
-      {actionModal && (
+      {actionModal && (!isSrPortal || actionModal.mode === 'collect_customer') && (
         <div
           className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
           role="dialog"
