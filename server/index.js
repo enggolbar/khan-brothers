@@ -70,8 +70,6 @@ async function ensureSuperAdmin() {
     VALUES(?,?,?,?, 'super_admin','active') ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),password_hash=VALUES(password_hash),role='super_admin',status='active'`,
   [crypto.randomUUID(),email,'Super Admin',passwordHash]);
 }
-await ensureSuperAdmin();
-
 const authRateWindows = new Map();
 function limitAuthAttempts(req,res,next) {
   const now=Date.now(), key=req.ip;
@@ -371,4 +369,11 @@ app.post('/api/batch', async (req, res) => {
 app.use(express.static(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist')));
 app.get('*', (_req,res) => res.sendFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist/index.html')));
 const port = Number(process.env.PORT || 3000);
-app.listen(port, '0.0.0.0', () => console.log(`KB Shop listening on ${port}`));
+ensureSuperAdmin()
+  .then(() => {
+    app.listen(port, '0.0.0.0', () => console.log(`KB Shop listening on ${port}`));
+  })
+  .catch((error) => {
+    console.error('Server startup failed while connecting to MySQL or provisioning the super admin:', error);
+    process.exit(1);
+  });
