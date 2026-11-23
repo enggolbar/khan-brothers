@@ -128,11 +128,25 @@ app.post('/api/auth/login', limitAuthAttempts, async (req,res) => {
       if(requests[0]?.status==='rejected') return res.status(403).json({ code:'signup_rejected', error:'সাইনআপ অনুরোধ অনুমোদিত হয়নি। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।' });
       return res.status(401).json({ error:'ইমেইল বা পাসওয়ার্ড সঠিক নয়।' });
     }
+    if(user.role==='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন লগইনের জন্য /admin ব্যবহার করুন।'});
     if(user.status!=='active') return res.status(403).json({ code:'account_disabled', error:'অ্যাকাউন্টটি সক্রিয় নেই। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।' });
     if(!await bcrypt.compare(password,user.password_hash)) return res.status(401).json({ error:'ইমেইল বা পাসওয়ার্ড সঠিক নয়।' });
     writeSession(req,res,user);
     res.json({ user:{uid:user.id,email:user.email,displayName:user.display_name,role:user.role,businessName:user.business_name || ''} });
   } catch { res.status(500).json({ error:'সাইন ইন করা যায়নি। আবার চেষ্টা করুন।' }); }
+});
+
+app.post('/api/auth/admin-login', limitAuthAttempts, async (req,res) => {
+  const email=String(req.body?.email||'').trim().toLowerCase(), password=String(req.body?.password||'');
+  try {
+    const [rows]=await pool.execute('SELECT id,email,display_name,password_hash,role,status FROM kb_users WHERE email=?',[email]);
+    const user=rows[0];
+    if(!user || user.role!=='super_admin' || user.status!=='active' || !await bcrypt.compare(password,user.password_hash)) {
+      return res.status(401).json({error:'অ্যাডমিন ইমেইল বা পাসওয়ার্ড সঠিক নয়।'});
+    }
+    writeSession(req,res,user);
+    res.json({user:{uid:user.id,email:user.email,displayName:user.display_name,role:user.role}});
+  } catch { res.status(500).json({error:'অ্যাডমিন সাইন ইন করা যায়নি। আবার চেষ্টা করুন।'}); }
 });
 
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '').replace(/^88/, '');
@@ -220,6 +234,70 @@ app.post('/api/admin/signup-requests/:id/:decision', async (req,res) => {
     await conn.commit(); res.json({ok:true});
   } catch(e) { await conn.rollback(); res.status(500).json({error:'অনুরোধ আপডেট করা যায়নি।'}); }
   finally { conn.release(); }
+});
+
+app.get('/api/admin/overview', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  try {
+    const [rows]=await pool.query(`SELECT
+      (SELECT COUNT(*) FROM kb_users WHERE role='owner') AS total_owners,
+      (SELECT COUNT(*) FROM kb_users WHERE role='owner' AND status='active') AS active_owners,
+      (SELECT COUNT(*) FROM kb_users WHERE role='owner' AND status='disabled') AS disabled_owners,
+      (SELECT COUNT(*) FROM kb_shops) AS total_shops,
+      (SELECT COUNT(*) FROM kb_signup_requests WHERE status='pending') AS pending_signups,
+      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/products') AS total_products,
+      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/sales') AS total_sales,
+      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/customers') AS total_customers,
+      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/branches') AS total_branches`);
+    const row=rows[0]||{};
+    res.json(Object.fromEntries(Object.entries(row).map(([key,value])=>[key,Number(value||0)])));
+  } catch { res.status(500).json({error:'সিস্টেম সারাংশ লোড করা যায়নি।'}); }
+});
+
+app.get('/api/admin/shops', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  try {
+    const [rows]=await pool.query(`SELECT s.id,s.owner_id,s.name,s.branch_name,s.phone,s.plan,s.updated_at,
+      u.display_name AS owner_name,u.email AS owner_email,u.status AS owner_status,
+      (SELECT COUNT(*) FROM kb_documents d WHERE d.shop_id=s.id AND d.collection_path=CONCAT('shops/',s.id,'/products')) AS products,
+      (SELECT COUNT(*) FROM kb_documents d WHERE d.shop_id=s.id AND d.collection_path=CONCAT('shops/',s.id,'/sales')) AS sales,
+      (SELECT COUNT(*) FROM kb_documents d WHERE d.shop_id=s.id AND d.collection_path=CONCAT('shops/',s.id,'/customers')) AS customers,
+      (SELECT COUNT(*) FROM kb_documents d WHERE d.shop_id=s.id AND d.collection_path=CONCAT('shops/',s.id,'/branches')) AS branches
+      FROM kb_shops s JOIN kb_users u ON u.id=s.owner_id ORDER BY s.updated_at DESC LIMIT 1000`);
+    res.json(rows);
+  } catch { res.status(500).json({error:'ব্যবসার তালিকা লোড করা যায়নি।'}); }
+});
+
+app.get('/api/admin/users', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  try {
+    const [rows]=await pool.query(`SELECT u.id,u.display_name,u.email,u.status,u.created_at,COUNT(s.id) AS shops
+      FROM kb_users u LEFT JOIN kb_shops s ON s.owner_id=u.id WHERE u.role='owner'
+      GROUP BY u.id,u.display_name,u.email,u.status,u.created_at ORDER BY u.created_at DESC LIMIT 1000`);
+    res.json(rows);
+  } catch { res.status(500).json({error:'অ্যাকাউন্ট তালিকা লোড করা যায়নি।'}); }
+});
+
+app.patch('/api/admin/users/:id/status', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  const status=String(req.body?.status||'');
+  if(!['active','disabled'].includes(status)) return res.status(400).json({error:'অ্যাকাউন্টের অবস্থা সঠিক নয়।'});
+  try {
+    const [result]=await pool.execute("UPDATE kb_users SET status=? WHERE id=? AND role='owner'",[status,req.params.id]);
+    if(!result.affectedRows) return res.status(404).json({error:'মালিক অ্যাকাউন্টটি পাওয়া যায়নি।'});
+    res.json({ok:true,status});
+  } catch { res.status(500).json({error:'অ্যাকাউন্টের অবস্থা বদলানো যায়নি।'}); }
+});
+
+app.patch('/api/admin/shops/:id/plan', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  const plan=String(req.body?.plan||'');
+  if(!['starter','growth','enterprise'].includes(plan)) return res.status(400).json({error:'প্ল্যান সঠিক নয়।'});
+  try {
+    const [result]=await pool.execute('UPDATE kb_shops SET plan=?,updated_at=CURRENT_TIMESTAMP(3) WHERE id=?',[plan,req.params.id]);
+    if(!result.affectedRows) return res.status(404).json({error:'দোকানটি পাওয়া যায়নি।'});
+    res.json({ok:true,plan});
+  } catch { res.status(500).json({error:'প্ল্যান আপডেট করা যায়নি।'}); }
 });
 
 function parsePath(value) {

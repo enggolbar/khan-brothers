@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, onSnapshot, query, where } from './mysqlDataStore';
-import { getCurrentUser, requestSignup, signIn, signInWithSrPhone, signOut, type AppUser, type SignupFormData } from './authClient';
+import { getCurrentUser, requestSignup, signIn, signInAsAdmin, signInWithSrPhone, signOut, type AppUser, type SignupFormData } from './authClient';
 import {
   BarChart3,
   Barcode,
@@ -61,6 +61,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { ShopSettingsView } from './components/ShopSettingsView';
 import { ReceiptModal } from './components/ReceiptModal';
 import { AdminApprovalPanel } from './components/AdminApprovalPanel';
+import { AdminLogin } from './components/AdminLogin';
 
 interface NavGroup {
   title: string;
@@ -224,7 +225,7 @@ const BrandMark: React.FC<{ compact?: boolean }> = ({ compact = false }) => (
           M/S Khan Brothers
         </span>
         <span className="text-[10px] font-medium text-emerald-400 truncate">
-          BazarGrid POS Cloud
+          AnZ-Soft POS Cloud
         </span>
       </span>
     )}
@@ -232,6 +233,7 @@ const BrandMark: React.FC<{ compact?: boolean }> = ({ compact = false }) => (
 );
 
 export default function App() {
+  const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
   const [user, setUser] = useState<AppUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -289,6 +291,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (authReady && user?.role === 'super_admin' && !isAdminRoute) {
+      window.location.replace('/admin');
+    }
+  }, [authReady, user, isAdminRoute]);
+
+  useEffect(() => {
     if (quickJumpOpen) {
       window.setTimeout(() => quickJumpInputRef.current?.focus(), 20);
     }
@@ -330,7 +338,7 @@ export default function App() {
 
   // Subscribe to owner's cloud shops
   useEffect(() => {
-    if (!authReady || !user || user.role === 'super_admin') return;
+    if (!authReady || !user || user.role === 'super_admin' || isAdminRoute) return;
     const path = 'shops';
     const q = query(collection(db, 'shops'), where('ownerId', '==', user.uid));
 
@@ -372,11 +380,11 @@ export default function App() {
     );
 
     return () => unsub();
-  }, [authReady, user]);
+  }, [authReady, user, isAdminRoute]);
 
   // Subscribe to all operational subcollections for the active shop
   useEffect(() => {
-    if (!authReady || !user || user.role === 'super_admin' || !activeShopId) return;
+    if (!authReady || !user || user.role === 'super_admin' || isAdminRoute || !activeShopId) return;
 
     const uid = user.uid;
     const reportErr = (error: unknown, path: string) => {
@@ -548,7 +556,7 @@ export default function App() {
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [authReady, user, activeShopId]);
+  }, [authReady, user, activeShopId, isAdminRoute]);
 
   const activeShop = useMemo(
     () => shops.find((s) => s.id === activeShopId) || null,
@@ -639,6 +647,11 @@ export default function App() {
     setUser(nextUser);
   });
 
+  const handleAdminSignIn = (email: string, password: string) => runAuthAction(async () => {
+    const nextUser = await signInAsAdmin(email, password);
+    setUser(nextUser);
+  });
+
   const handleSrPhoneSignIn = (phone:string) => runAuthAction(async () => {
     const nextUser=await signInWithSrPhone(phone);
     setUser(nextUser);
@@ -707,6 +720,11 @@ export default function App() {
     );
   }
 
+  if (isAdminRoute) {
+    if (user?.role === 'super_admin') return <AdminApprovalPanel user={user} onSignOut={handleSignOut} />;
+    return <AdminLogin onSignIn={handleAdminSignIn} signingIn={signingIn} error={authError} />;
+  }
+
   if (!user) {
     return (
       <LandingAuth
@@ -721,7 +739,7 @@ export default function App() {
   }
 
   if (user.role === 'super_admin') {
-    return <AdminApprovalPanel user={user} onSignOut={handleSignOut} />;
+    return <div className="flex min-h-screen items-center justify-center bg-[#eaf5ff] text-sm text-slate-600">অ্যাডমিন প্যানেল খুলছে…</div>;
   }
 
   if (!shopsLoaded || !activeShop) {
@@ -764,7 +782,7 @@ export default function App() {
             type="button"
             onClick={() => navigateTo('dashboard')}
             className="flex items-center min-w-0 cursor-pointer"
-            title="BazarGrid Smart Dashboard"
+            title="AnZ-Soft Smart Dashboard"
           >
             <BrandMark compact={sidebarCompact} />
           </button>

@@ -156,7 +156,7 @@ export const LandingAuth: React.FC<LandingAuthProps> = ({
             </div>
 
             {mode==='login' && <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
-              <button type="button" onClick={()=>setLoginType('owner')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='owner'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>মালিক / Admin</button>
+              <button type="button" onClick={()=>setLoginType('owner')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='owner'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>মালিক লগইন</button>
               <button type="button" onClick={()=>setLoginType('sr')} className={`min-h-10 rounded-lg text-xs font-semibold ${loginType==='sr'?'bg-white text-emerald-800 shadow-sm':'text-slate-500'}`}>SR Mobile Login</button>
             </div>}
 

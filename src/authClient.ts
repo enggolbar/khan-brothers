@@ -71,6 +71,11 @@ export async function signIn(email: string, password: string): Promise<AppUser> 
   return result.user;
 }
 
+export async function signInAsAdmin(email: string, password: string): Promise<AppUser> {
+  const result = await authRequest<{user:AppUser}>('/admin-login', {email,password});
+  return result.user;
+}
+
 export async function signInWithSrPhone(phone: string): Promise<AppUser> {
   const result = await authRequest<{user:AppUser}>('/sr-phone', {phone});
   return result.user;

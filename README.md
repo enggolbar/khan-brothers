@@ -12,6 +12,8 @@ Use a Hostinger Business/Cloud Node.js web app or a VPS (Node.js 22 recommended)
 4. Set `SESSION_SECRET` to a long random secret, `SUPER_ADMIN_EMAIL` to the admin login email, and `SUPER_ADMIN_PASSWORD` to a strong password. The app creates or refreshes this super-admin account at startup. Keep these values private. `ERP_JWT_SECRET`, `ERP_ADMIN_USER`, and `ERP_ADMIN_PASSWORD` are accepted as fallback names.
 5. Open `/api/health` and confirm it returns `{"ok":true}`. Sign in with the super-admin credentials and approve signup requests from the Super Admin panel.
 
+The store owner sign-in is available at the site root. Super Admin signs in separately at `/admin`; the regular sign-in endpoint refuses Super Admin accounts. The control center includes POS usage totals, signup approvals, business and plan management, and owner account activation/suspension. All administrative data operations are scoped to this POS application's `kb_*` tables.
+
 For local development, install Node.js 22, import the schema into a local MySQL database, copy `.env.example` to `.env`, set the credentials and admin values, then run `npm install`, `npm run build`, and `npm start`.
 
 ## Signup approval and demo access
