@@ -71,6 +71,52 @@ async function ensureSuperAdmin() {
     VALUES(?,?,?,?, 'super_admin','active') ON DUPLICATE KEY UPDATE display_name=VALUES(display_name),password_hash=VALUES(password_hash),role='super_admin',status='active'`,
   [crypto.randomUUID(),email,'Super Admin',passwordHash]);
 }
+async function ensureAdminTables() {
+  await pool.query(`CREATE TABLE IF NOT EXISTS kb_admin_customers (
+    id CHAR(36) NOT NULL PRIMARY KEY,
+    company_name VARCHAR(160) NOT NULL,
+    contact_name VARCHAR(120) NOT NULL DEFAULT '',
+    phone VARCHAR(30) NOT NULL DEFAULT '',
+    email VARCHAR(254) NOT NULL DEFAULT '',
+    address VARCHAR(300) NOT NULL DEFAULT '',
+    district VARCHAR(100) NOT NULL DEFAULT '',
+    customer_type VARCHAR(30) NOT NULL DEFAULT 'lead',
+    source VARCHAR(100) NOT NULL DEFAULT '',
+    notes TEXT NOT NULL,
+    created_at DATETIME(3) NOT NULL,
+    updated_at DATETIME(3) NOT NULL,
+    INDEX kb_admin_customers_type (customer_type),
+    INDEX kb_admin_customers_phone (phone),
+    INDEX kb_admin_customers_email (email)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS kb_admin_documents (
+    id CHAR(36) NOT NULL PRIMARY KEY,
+    document_no VARCHAR(48) NOT NULL UNIQUE,
+    document_type VARCHAR(24) NOT NULL,
+    customer_id CHAR(36) NULL,
+    customer_snapshot JSON NOT NULL,
+    shop_id VARCHAR(128) NULL,
+    related_document_id CHAR(36) NULL,
+    issue_date DATE NOT NULL,
+    due_date DATE NULL,
+    status VARCHAR(24) NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'BDT',
+    subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
+    discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    tax_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    paid_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    lines_json JSON NOT NULL,
+    notes TEXT NOT NULL,
+    created_by CHAR(36) NOT NULL,
+    created_at DATETIME(3) NOT NULL,
+    updated_at DATETIME(3) NOT NULL,
+    INDEX kb_admin_docs_type_date (document_type, issue_date),
+    INDEX kb_admin_docs_shop (shop_id, document_type, issue_date),
+    INDEX kb_admin_docs_customer (customer_id, issue_date),
+    INDEX kb_admin_docs_related (related_document_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+}
 const authRateWindows = new Map();
 function limitAuthAttempts(req,res,next) {
   const now=Date.now(), key=req.ip;
@@ -142,11 +188,11 @@ app.post('/api/auth/admin-login', limitAuthAttempts, async (req,res) => {
     const [rows]=await pool.execute('SELECT id,email,display_name,password_hash,role,status FROM kb_users WHERE email=?',[email]);
     const user=rows[0];
     if(!user || user.role!=='super_admin' || user.status!=='active' || !await bcrypt.compare(password,user.password_hash)) {
-      return res.status(401).json({error:'অ্যাডমিন ইমেইল বা পাসওয়ার্ড সঠিক নয়।'});
+      return res.status(401).json({error:'Admin email or password is incorrect.'});
     }
     writeSession(req,res,user);
     res.json({user:{uid:user.id,email:user.email,displayName:user.display_name,role:user.role}});
-  } catch { res.status(500).json({error:'অ্যাডমিন সাইন ইন করা যায়নি। আবার চেষ্টা করুন।'}); }
+  } catch { res.status(500).json({error:'Could not sign in. Please try again.'}); }
 });
 
 const normalizePhone = (value) => String(value || '').replace(/\D/g, '').replace(/^88/, '');
@@ -212,32 +258,32 @@ app.use('/api', async (req, res, next) => {
 });
 
 app.get('/api/admin/signup-requests', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   const [rows]=await pool.execute(`SELECT r.id,r.display_name,r.email,r.status,r.requested_at,d.phone,d.business_name,d.business_type,d.address,d.district
     FROM kb_signup_requests r LEFT JOIN kb_signup_details d ON d.request_id=r.id WHERE r.status='pending' ORDER BY r.requested_at ASC`);
   res.json(rows);
 });
 app.post('/api/admin/signup-requests/:id/:decision', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   const decision=req.params.decision;
-  if(!['approve','reject'].includes(decision)) return res.status(400).json({error:'ভুল সিদ্ধান্ত।'});
+  if(!['approve','reject'].includes(decision)) return res.status(400).json({error:'Invalid signup decision.'});
   const conn=await pool.getConnection();
   try {
     await conn.beginTransaction();
     const [rows]=await conn.execute('SELECT * FROM kb_signup_requests WHERE id=? FOR UPDATE',[req.params.id]);
     const request=rows[0];
-    if(!request || request.status!=='pending') { await conn.rollback(); return res.status(409).json({error:'অনুরোধটি আর অপেক্ষমাণ নেই।'}); }
+    if(!request || request.status!=='pending') { await conn.rollback(); return res.status(409).json({error:'This request is no longer pending.'}); }
     if(decision==='approve') {
       await conn.execute('INSERT INTO kb_users(id,email,display_name,password_hash,role,status) VALUES(?,?,?,?,\'owner\',\'active\')',[crypto.randomUUID(),request.email,request.display_name,request.password_hash]);
     }
     await conn.execute('UPDATE kb_signup_requests SET status=?,password_hash=\'\',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=? WHERE id=?',[decision==='approve'?'approved':'rejected',req.user.uid,request.id]);
     await conn.commit(); res.json({ok:true});
-  } catch(e) { await conn.rollback(); res.status(500).json({error:'অনুরোধ আপডেট করা যায়নি।'}); }
+  } catch(e) { await conn.rollback(); res.status(500).json({error:'Could not update the signup request.'}); }
   finally { conn.release(); }
 });
 
 app.get('/api/admin/overview', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   try {
     const [rows]=await pool.query(`SELECT
       (SELECT COUNT(*) FROM kb_users WHERE role='owner') AS total_owners,
@@ -248,14 +294,18 @@ app.get('/api/admin/overview', async (req,res) => {
       (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/products') AS total_products,
       (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/sales') AS total_sales,
       (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/customers') AS total_customers,
-      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/branches') AS total_branches`);
+      (SELECT COUNT(*) FROM kb_documents WHERE collection_path LIKE '%/branches') AS total_branches,
+      (SELECT COUNT(*) FROM kb_admin_customers) AS crm_customers,
+      (SELECT COUNT(*) FROM kb_admin_documents WHERE document_type='invoice') AS admin_invoices,
+      (SELECT COALESCE(SUM(paid_amount),0) FROM kb_admin_documents WHERE document_type='invoice') AS admin_collected,
+      (SELECT COALESCE(SUM(total_amount-paid_amount),0) FROM kb_admin_documents WHERE document_type='invoice') AS admin_outstanding`);
     const row=rows[0]||{};
     res.json(Object.fromEntries(Object.entries(row).map(([key,value])=>[key,Number(value||0)])));
-  } catch { res.status(500).json({error:'সিস্টেম সারাংশ লোড করা যায়নি।'}); }
+  } catch { res.status(500).json({error:'Could not load the system overview.'}); }
 });
 
 app.get('/api/admin/shops', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   try {
     const [rows]=await pool.query(`SELECT s.id,s.owner_id,s.name,s.branch_name,s.phone,s.plan,s.updated_at,
       u.display_name AS owner_name,u.email AS owner_email,u.status AS owner_status,
@@ -265,39 +315,195 @@ app.get('/api/admin/shops', async (req,res) => {
       (SELECT COUNT(*) FROM kb_documents d WHERE d.shop_id=s.id AND d.collection_path=CONCAT('shops/',s.id,'/branches')) AS branches
       FROM kb_shops s JOIN kb_users u ON u.id=s.owner_id ORDER BY s.updated_at DESC LIMIT 1000`);
     res.json(rows);
-  } catch { res.status(500).json({error:'ব্যবসার তালিকা লোড করা যায়নি।'}); }
+  } catch { res.status(500).json({error:'Could not load the business list.'}); }
 });
 
 app.get('/api/admin/users', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   try {
     const [rows]=await pool.query(`SELECT u.id,u.display_name,u.email,u.status,u.created_at,COUNT(s.id) AS shops
       FROM kb_users u LEFT JOIN kb_shops s ON s.owner_id=u.id WHERE u.role='owner'
       GROUP BY u.id,u.display_name,u.email,u.status,u.created_at ORDER BY u.created_at DESC LIMIT 1000`);
     res.json(rows);
-  } catch { res.status(500).json({error:'অ্যাকাউন্ট তালিকা লোড করা যায়নি।'}); }
+  } catch { res.status(500).json({error:'Could not load owner accounts.'}); }
 });
 
 app.patch('/api/admin/users/:id/status', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   const status=String(req.body?.status||'');
-  if(!['active','disabled'].includes(status)) return res.status(400).json({error:'অ্যাকাউন্টের অবস্থা সঠিক নয়।'});
+  if(!['active','disabled'].includes(status)) return res.status(400).json({error:'Invalid account status.'});
   try {
     const [result]=await pool.execute("UPDATE kb_users SET status=? WHERE id=? AND role='owner'",[status,req.params.id]);
-    if(!result.affectedRows) return res.status(404).json({error:'মালিক অ্যাকাউন্টটি পাওয়া যায়নি।'});
+    if(!result.affectedRows) return res.status(404).json({error:'Owner account not found.'});
     res.json({ok:true,status});
-  } catch { res.status(500).json({error:'অ্যাকাউন্টের অবস্থা বদলানো যায়নি।'}); }
+  } catch { res.status(500).json({error:'Could not update the account status.'}); }
 });
 
 app.patch('/api/admin/shops/:id/plan', async (req,res) => {
-  if(req.user.role!=='super_admin') return res.status(403).json({error:'সুপার অ্যাডমিন অনুমতি প্রয়োজন।'});
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
   const plan=String(req.body?.plan||'');
-  if(!['starter','growth','enterprise'].includes(plan)) return res.status(400).json({error:'প্ল্যান সঠিক নয়।'});
+  if(!['starter','growth','enterprise'].includes(plan)) return res.status(400).json({error:'Invalid subscription plan.'});
   try {
     const [result]=await pool.execute('UPDATE kb_shops SET plan=?,updated_at=CURRENT_TIMESTAMP(3) WHERE id=?',[plan,req.params.id]);
-    if(!result.affectedRows) return res.status(404).json({error:'দোকানটি পাওয়া যায়নি।'});
+    if(!result.affectedRows) return res.status(404).json({error:'Business not found.'});
     res.json({ok:true,plan});
-  } catch { res.status(500).json({error:'প্ল্যান আপডেট করা যায়নি।'}); }
+  } catch { res.status(500).json({error:'Could not update the subscription plan.'}); }
+});
+
+const adminCustomerFields = (body = {}) => ({
+  company_name: String(body.company_name || '').trim().slice(0,160),
+  contact_name: String(body.contact_name || '').trim().slice(0,120),
+  phone: String(body.phone || '').trim().slice(0,30),
+  email: String(body.email || '').trim().toLowerCase().slice(0,254),
+  address: String(body.address || '').trim().slice(0,300),
+  district: String(body.district || '').trim().slice(0,100),
+  customer_type: ['lead','prospect','customer','inactive'].includes(body.customer_type) ? body.customer_type : 'lead',
+  source: String(body.source || '').trim().slice(0,100),
+  notes: String(body.notes || '').trim().slice(0,5000),
+});
+const roundMoney = (value) => Math.round((Number(value)+Number.EPSILON)*100)/100;
+
+app.get('/api/admin/crm/customers', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  try {
+    const [rows]=await pool.query('SELECT * FROM kb_admin_customers ORDER BY updated_at DESC LIMIT 2000');
+    res.json(rows);
+  } catch { res.status(500).json({error:'Could not load CRM contacts.'}); }
+});
+
+app.post('/api/admin/crm/customers', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  const customer=adminCustomerFields(req.body);
+  if(!customer.company_name && !customer.contact_name) return res.status(400).json({error:'Company or contact name is required.'});
+  try {
+    const id=crypto.randomUUID(), now=new Date();
+    await pool.execute(`INSERT INTO kb_admin_customers(id,company_name,contact_name,phone,email,address,district,customer_type,source,notes,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,[id,customer.company_name,customer.contact_name,customer.phone,customer.email,customer.address,customer.district,customer.customer_type,customer.source,customer.notes,now,now]);
+    res.status(201).json({id,...customer,created_at:now,updated_at:now});
+  } catch { res.status(500).json({error:'Could not create the CRM contact.'}); }
+});
+
+app.put('/api/admin/crm/customers/:id', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  const customer=adminCustomerFields(req.body);
+  if(!customer.company_name && !customer.contact_name) return res.status(400).json({error:'Company or contact name is required.'});
+  try {
+    const [result]=await pool.execute(`UPDATE kb_admin_customers SET company_name=?,contact_name=?,phone=?,email=?,address=?,district=?,customer_type=?,source=?,notes=?,updated_at=CURRENT_TIMESTAMP(3) WHERE id=?`,
+      [customer.company_name,customer.contact_name,customer.phone,customer.email,customer.address,customer.district,customer.customer_type,customer.source,customer.notes,req.params.id]);
+    if(!result.affectedRows) return res.status(404).json({error:'CRM contact not found.'});
+    res.json({ok:true});
+  } catch { res.status(500).json({error:'Could not update the CRM contact.'}); }
+});
+
+app.get('/api/admin/documents', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  try {
+    const [rows]=await pool.query(`SELECT d.*,s.name AS shop_name FROM kb_admin_documents d
+      LEFT JOIN kb_shops s ON s.id=d.shop_id ORDER BY d.issue_date DESC,d.created_at DESC LIMIT 2000`);
+    res.json(rows);
+  } catch { res.status(500).json({error:'Could not load commercial documents.'}); }
+});
+
+app.post('/api/admin/documents', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  const type=String(req.body?.document_type||'');
+  const prefix={invoice:'INV',quotation:'QUO',money_receipt:'RCT'}[type];
+  const issueDate=String(req.body?.issue_date||'').slice(0,10);
+  const dueDate=String(req.body?.due_date||'').slice(0,10);
+  const customerId=String(req.body?.customer_id||'').trim()||null;
+  let shopId=String(req.body?.shop_id||'').trim()||null;
+  const relatedDocumentId=String(req.body?.related_document_id||'').trim()||null;
+  const statusValue=String(req.body?.status||'');
+  const allowedStatuses={invoice:['draft','sent','partial','paid','void'],quotation:['draft','sent','accepted','rejected','expired'],money_receipt:['paid']};
+  const datePattern=/^\d{4}-\d{2}-\d{2}$/;
+  const rawLines=Array.isArray(req.body?.lines)?req.body.lines:[];
+  if(!prefix || !datePattern.test(issueDate) || (dueDate&&!datePattern.test(dueDate)) || !rawLines.length || rawLines.length>100 || !(allowedStatuses[type]||[]).includes(statusValue)) {
+    return res.status(400).json({error:'Check the document type, dates, status, and line items.'});
+  }
+  const lines=[];
+  for(const raw of rawLines) {
+    const description=String(raw?.description||'').trim().slice(0,240);
+    const quantity=Number(raw?.quantity), unitPrice=Number(raw?.unit_price);
+    if(!description || !Number.isFinite(quantity) || quantity<=0 || quantity>1000000 || !Number.isFinite(unitPrice) || unitPrice<0 || unitPrice>1000000000) return res.status(400).json({error:'Each line needs a description, positive quantity, and valid unit price.'});
+    lines.push({description,quantity,unit_price:Math.round(unitPrice*100)/100,line_total:Math.round(quantity*unitPrice*100)/100});
+  }
+  const money=(value)=>Math.round((Number(value)+Number.EPSILON)*100)/100;
+  const subtotal=money(lines.reduce((sum,line)=>sum+line.line_total,0));
+  const discount=money(Math.min(subtotal,Math.max(0,Number(req.body?.discount_amount)||0)));
+  const taxRate=Math.min(100,Math.max(0,Number(req.body?.tax_rate)||0));
+  const taxAmount=money((subtotal-discount)*taxRate/100);
+  const total=money(subtotal-discount+taxAmount);
+  if(type==='money_receipt' && total<=0) return res.status(400).json({error:'A money receipt amount must be greater than zero.'});
+  const notes=String(req.body?.notes||'').trim().slice(0,5000);
+  const currency=String(req.body?.currency||'BDT').toUpperCase().slice(0,3);
+  const conn=await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    let customerSnapshot={company_name:'',contact_name:'',phone:'',email:'',address:'',district:''};
+    if(customerId) {
+      const [customers]=await conn.execute('SELECT company_name,contact_name,phone,email,address,district FROM kb_admin_customers WHERE id=?',[customerId]);
+      if(!customers[0]) { await conn.rollback(); return res.status(404).json({error:'CRM contact not found.'}); }
+      customerSnapshot=customers[0];
+    } else if(req.body?.customer_snapshot && typeof req.body.customer_snapshot==='object') {
+      customerSnapshot={
+        company_name:String(req.body.customer_snapshot.company_name||'').trim().slice(0,160),
+        contact_name:String(req.body.customer_snapshot.contact_name||'').trim().slice(0,120),
+        phone:String(req.body.customer_snapshot.phone||'').trim().slice(0,30),
+        email:String(req.body.customer_snapshot.email||'').trim().toLowerCase().slice(0,254),
+        address:String(req.body.customer_snapshot.address||'').trim().slice(0,300),
+        district:String(req.body.customer_snapshot.district||'').trim().slice(0,100),
+      };
+    }
+    if(type!=='money_receipt' && !customerSnapshot.company_name && !customerSnapshot.contact_name) { await conn.rollback(); return res.status(400).json({error:'Select a CRM customer or enter a customer name.'}); }
+    if(shopId) {
+      const [businesses]=await conn.execute('SELECT id FROM kb_shops WHERE id=?',[shopId]);
+      if(!businesses[0]) { await conn.rollback(); return res.status(404).json({error:'POS business not found.'}); }
+    }
+    let relatedInvoice=null;
+    if(relatedDocumentId) {
+      const [documents]=await conn.execute("SELECT * FROM kb_admin_documents WHERE id=? AND document_type='invoice' FOR UPDATE",[relatedDocumentId]);
+      relatedInvoice=documents[0]||null;
+      if(!relatedInvoice) { await conn.rollback(); return res.status(404).json({error:'Related invoice not found.'}); }
+      if(type!=='money_receipt') { await conn.rollback(); return res.status(400).json({error:'Only a money receipt can be linked to an invoice.'}); }
+      if(shopId && relatedInvoice.shop_id && shopId!==relatedInvoice.shop_id) { await conn.rollback(); return res.status(400).json({error:'The receipt and invoice must belong to the same business.'}); }
+      if(customerId && relatedInvoice.customer_id && customerId!==relatedInvoice.customer_id) { await conn.rollback(); return res.status(400).json({error:'The receipt and invoice must belong to the same CRM customer.'}); }
+      shopId=shopId||relatedInvoice.shop_id;
+      customerSnapshot=typeof relatedInvoice.customer_snapshot==='string'?JSON.parse(relatedInvoice.customer_snapshot):relatedInvoice.customer_snapshot;
+    }
+    const paidAmount=type==='money_receipt'?total:(statusValue==='paid'?total:money(Math.min(total,Math.max(0,Number(req.body?.paid_amount)||0))));
+    const actualStatus=type==='invoice'?(paidAmount>=total&&total>0?'paid':paidAmount>0?'partial':statusValue==='void'?'void':statusValue==='draft'?'draft':'sent'):statusValue;
+    const id=crypto.randomUUID();
+    const documentNo=`AZS-${prefix}-${issueDate.replaceAll('-','')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const now=new Date();
+    await conn.execute(`INSERT INTO kb_admin_documents(id,document_no,document_type,customer_id,customer_snapshot,shop_id,related_document_id,issue_date,due_date,status,currency,subtotal,discount_amount,tax_amount,total_amount,paid_amount,lines_json,notes,created_by,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+      id,documentNo,type,customerId,JSON.stringify(customerSnapshot),shopId,relatedDocumentId,issueDate,dueDate||null,actualStatus,currency,subtotal,discount,taxAmount,total,paidAmount,JSON.stringify(lines),notes,req.user.uid,now,now,
+    ]);
+    if(relatedInvoice) {
+      const nextPaid=money(Number(relatedInvoice.paid_amount)+total);
+      if(nextPaid>Number(relatedInvoice.total_amount)+0.01) { await conn.rollback(); return res.status(400).json({error:'Receipt amount exceeds the invoice balance.'}); }
+      await conn.execute('UPDATE kb_admin_documents SET paid_amount=?,status=?,updated_at=CURRENT_TIMESTAMP(3) WHERE id=?',[nextPaid,nextPaid>=Number(relatedInvoice.total_amount)?'paid':'partial',relatedInvoice.id]);
+    }
+    await conn.commit();
+    res.status(201).json({id,document_no:documentNo,document_type:type,customer_id:customerId,customer_snapshot:customerSnapshot,shop_id:shopId,related_document_id:relatedDocumentId,issue_date:issueDate,due_date:dueDate||null,status:actualStatus,currency,subtotal,discount_amount:discount,tax_amount:taxAmount,total_amount:total,paid_amount:paidAmount,lines,notes,created_at:now});
+  } catch(error) {
+    await conn.rollback();
+    res.status(500).json({error:'Could not save the document.'});
+  } finally { conn.release(); }
+});
+
+app.get('/api/admin/software-sales', async (req,res) => {
+  if(req.user.role!=='super_admin') return res.status(403).json({error:'Super Admin access is required.'});
+  try {
+    const [rows]=await pool.query(`SELECT d.id,d.document_no,d.issue_date,d.status,d.currency,d.total_amount,d.paid_amount,
+      d.shop_id,s.name AS shop_name,d.customer_snapshot,d.created_at
+      FROM kb_admin_documents d LEFT JOIN kb_shops s ON s.id=d.shop_id
+      WHERE d.document_type='invoice' AND d.shop_id IS NOT NULL AND d.status<>'void'
+      ORDER BY d.issue_date DESC,d.created_at DESC LIMIT 5000`);
+    const invoices=rows.map((row)=>({...row,customer_snapshot:typeof row.customer_snapshot==='string'?JSON.parse(row.customer_snapshot):row.customer_snapshot,total_amount:Number(row.total_amount),paid_amount:Number(row.paid_amount)}));
+    const summary=invoices.reduce((total,invoice)=>({count:total.count+1,invoiced:roundMoney(total.invoiced+invoice.total_amount),collected:roundMoney(total.collected+invoice.paid_amount),outstanding:roundMoney(total.outstanding+invoice.total_amount-invoice.paid_amount)}),{count:0,invoiced:0,collected:0,outstanding:0});
+    res.json({summary,invoices});
+  } catch { res.status(500).json({error:'Could not load software sales.'}); }
 });
 
 function parsePath(value) {
@@ -479,7 +685,8 @@ app.get('*', (_req, res) => {
   return res.sendFile(path.join(frontendDir, 'index.html'));
 });
 const port = Number(process.env.PORT || 3000);
-ensureSuperAdmin()
+ensureAdminTables()
+  .then(() => ensureSuperAdmin())
   .then(() => {
     app.listen(port, '0.0.0.0', () => console.log(`KB Shop listening on ${port}`));
   })

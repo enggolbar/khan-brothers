@@ -28,33 +28,38 @@ export const AdminLogin: React.FC<Props> = ({ onSignIn, signingIn, error }) => {
           <ShieldCheck className="h-7 w-7" />
         </div>
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">AnZ-Soft · Secure console</p>
-        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">সুপার অ্যাডমিন লগইন</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">এই প্যানেল শুধু অনুমোদিত সফটওয়্যার অ্যাডমিনের জন্য।</p>
+        <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">Super Admin Sign In</h1>
+        <p className="mt-2 text-sm leading-6 text-slate-500">This console is restricted to authorized AnZ-Soft administrators.</p>
 
         <form onSubmit={(event) => void submit(event)} className="mt-7 space-y-4">
           <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-slate-700">অ্যাডমিন ইমেইল</span>
+            <span className="mb-1.5 block text-xs font-semibold text-slate-700">Admin email</span>
             <span className="relative block">
               <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@example.com" required />
             </span>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-slate-700">পাসওয়ার্ড</span>
+            <span className="mb-1.5 block text-xs font-semibold text-slate-700">Password</span>
             <span className="relative block">
               <LockKeyhole className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-12 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-              <button type="button" aria-label={showPassword ? 'পাসওয়ার্ড লুকান' : 'পাসওয়ার্ড দেখান'} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700">
+              <button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700">
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </span>
           </label>
           {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-xs leading-5 text-rose-700">{error}</p>}
           <button type="submit" disabled={signingIn} className="flex min-h-12 w-full items-center justify-center rounded-xl bg-blue-800 px-4 text-sm font-bold text-white shadow-lg shadow-blue-900/15 transition hover:bg-blue-900 disabled:cursor-wait disabled:opacity-60">
-            {signingIn ? 'যাচাই হচ্ছে…' : 'অ্যাডমিন প্যানেলে প্রবেশ'}
+            {signingIn ? 'Verifying…' : 'Enter Control Center'}
           </button>
         </form>
-        <p className="mt-6 text-center text-[11px] text-slate-400">ব্যবসার মালিক হলে মূল ডোমেইনের লগইন ব্যবহার করুন।</p>
+        <div className="mt-6 border-t border-slate-100 pt-4 text-center text-[11px] leading-5 text-slate-500">
+          <p className="font-semibold text-slate-700">AnZ Hi-Tech Solutions</p>
+          <p>GEC, Chittagong</p>
+          <a href="https://anzhitech.org/" target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">anzhitech.org</a>
+          <p className="mt-2 text-slate-400">For store owner access, use the main website sign-in.</p>
+        </div>
       </section>
     </main>
   );
