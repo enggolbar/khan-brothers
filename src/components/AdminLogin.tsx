@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, LockKeyhole, Mail } from 'lucide-react';
 
 interface Props {
   onSignIn: (email: string, password: string) => Promise<void>;
@@ -24,9 +24,7 @@ export const AdminLogin: React.FC<Props> = ({ onSignIn, signingIn, error }) => {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#eaf5ff] px-4 py-10 text-slate-900">
       <section className="w-full max-w-md rounded-[28px] border border-white bg-white p-7 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.28)] sm:p-10">
-        <div className="mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-800">
-          <ShieldCheck className="h-7 w-7" />
-        </div>
+        <img src="/anz-hi-tech-solutions-emblem.png" alt="AnZ Hi-Tech Solutions" className="mb-6 h-16 w-16 rounded-full object-contain shadow-sm" />
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">AnZ-Soft · Secure console</p>
         <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">Super Admin Sign In</h1>
         <p className="mt-2 text-sm leading-6 text-slate-500">This console is restricted to authorized AnZ-Soft administrators.</p>
