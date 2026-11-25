@@ -66,7 +66,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [discountType, setDiscountType] = useState<'bdt' | 'pct'>('bdt');
   const [discountInput, setDiscountInput] = useState<string>('');
-  const [vatEnabled, setVatEnabled] = useState(false);
+  const vatEnabled = false;
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentRef, setPaymentRef] = useState<string>('');
   const [paidInput, setPaidInput] = useState<string>('');
@@ -195,7 +195,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       dueToAdd,
       shortAmount,
     };
-  }, [cart, discountInput, discountType, paymentMethod, paidInput, vatEnabled]);
+  }, [cart, discountInput, discountType, paymentMethod, paidInput]);
 
   const showNotice = (msg: string) => {
     setScanNotice(msg);
@@ -437,7 +437,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </p>
           </div>
         ) : (
-          cart.map(({ product, qty, unitPrice, vatRate, saleUnit }) => (
+          cart.map(({ product, qty, unitPrice, saleUnit }) => (
             <div key={product.id} className="px-4 py-3 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 text-sm font-medium text-slate-900 truncate">{product.name}</p>
@@ -456,9 +456,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 </label>
                 <label className="min-w-0 flex-1 text-[10px] font-medium text-slate-500">Sell rate (৳)
                   <input type="number" min="0" max="10000000" step="0.01" value={unitPrice} onChange={(e)=>updateCartItem(product.id,{unitPrice:Math.min(10000000,Math.max(0,Number(e.target.value)||0))})} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-2 font-mono text-xs text-slate-900 focus:border-emerald-700 focus:outline-none" />
-                </label>
-                <label className={`w-[76px] text-[10px] font-medium ${vatEnabled?'text-slate-500':'text-slate-300'}`}>VAT %
-                  <input type="number" min="0" max="30" step="0.5" disabled={!vatEnabled} value={vatRate} onChange={(e)=>updateCartItem(product.id,{vatRate:Math.min(30,Math.max(0,Number(e.target.value)||0))})} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-2 font-mono text-xs text-slate-900 focus:border-emerald-700 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400" />
                 </label>
                 <div className="flex items-center gap-1 shrink-0 pb-0.5">
                 <button
@@ -538,14 +535,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
               <span className="font-mono">-{formatBDT(totals.discountAmount)}</span>
             </div>
           )}
-          <div className="flex items-center justify-between gap-2">
-            <label className="inline-flex items-center gap-1.5 font-medium text-slate-700">
-              <input type="checkbox" checked={vatEnabled} onChange={(e)=>setVatEnabled(e.target.checked)} className="accent-emerald-700" />
-              <span>Apply VAT/TAX</span>
-            </label>
-            <span>VAT (Mushak-6.3)</span>
-            <span className="font-mono text-slate-900">{formatBDT(totals.vatAmount)}</span>
-          </div>
           <div className="flex justify-between items-baseline pt-2 border-t border-slate-200">
             <span className="text-sm font-semibold text-slate-900">Net Payable</span>
             <span className="font-mono text-xl font-bold text-slate-900">
