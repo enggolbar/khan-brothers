@@ -80,6 +80,7 @@
 
 /* 80mm Thermal POS Receipt, Commercial Barcode/Shelf Stickers & SR Delivery Challan Print Mode */
 @media print {
+  @page { size: A4; margin: 12mm; }
   body * {
     visibility: hidden !important;
   }
@@ -94,11 +95,11 @@
   }
 
   #thermal-receipt-sheet {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 80mm !important;
-    margin: 0 auto !important;
-    padding: 4mm !important;
+    position: static !important;
+    width: 100% !important;
+    min-height: 270mm !important;
+    margin: 0 !important;
+    padding: 8mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     box-shadow: none !important;
