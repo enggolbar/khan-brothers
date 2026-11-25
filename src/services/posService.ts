@@ -133,11 +133,15 @@ export interface ProductInput {
   sku: string;
   category: string;
   unit: string;
-  costPrice: number;
-  sellingPrice: number;
+  unitQuantity?: number | '';
+  secondaryUnit?: string;
+  secondaryUnitQuantity?: number | '';
+  priceUnit?: 'pcs' | 'unit';
+  costPrice: number | '';
+  sellingPrice: number | '';
   vatRate: number;
-  stock: number;
-  reorderLevel: number;
+  stock: number | '';
+  reorderLevel: number | '';
   isActive: boolean;
 }
 
@@ -162,8 +166,12 @@ export async function upsertProduct(
     sku: sanitizeStr(input.sku, 40) || `SKU-${Date.now().toString(36).toUpperCase()}`,
     category: sanitizeStr(input.category, 50) || 'Groceries',
     unit: sanitizeStr(input.unit, 20) || 'pcs',
-    costPrice: Math.min(10000000, Math.max(0, Number(input.costPrice) || 0)),
-    sellingPrice: Math.min(10000000, Math.max(0, Number(input.sellingPrice) || 0)),
+    unitQuantity: Math.max(1, Math.floor(Number(input.unitQuantity) || 1)),
+    secondaryUnit: sanitizeStr(input.secondaryUnit || '', 20),
+    secondaryUnitQuantity: Math.max(0, Math.floor(Number(input.secondaryUnitQuantity) || 0)),
+    priceUnit: input.priceUnit === 'unit' ? 'unit' : 'pcs',
+    costPrice: Math.min(10000000, Math.max(0, Number(input.costPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : 1)),
+    sellingPrice: Math.min(10000000, Math.max(0, Number(input.sellingPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : 1)),
     vatRate: Math.min(30, Math.max(0, Number(input.vatRate) || 0)),
     stock: Math.min(10000000, Math.max(0, Number(input.stock) || 0)),
     reorderLevel: Math.min(1000000, Math.max(0, Number(input.reorderLevel) || 0)),
@@ -238,8 +246,8 @@ export async function createSaleTransaction(
     throw new Error('Cannot process an empty cart.');
   }
 
-  const saleItems: SaleItem[] = boundedCart.map(({ product, qty, unitPrice, vatRate }) => {
-    const safeQty = Math.max(1, Math.round(qty));
+  const saleItems: SaleItem[] = boundedCart.map(({ product, qty, unitPrice, vatRate, saleUnit }) => {
+    const safeQty = Math.max(0.01, Number(qty) || 0);
     const safeUnitPrice = Math.min(10000000, Math.max(0, Number(unitPrice) || 0));
     const safeVatRate = payload.vatEnabled ? Math.min(30, Math.max(0, Number(vatRate) || 0)) : 0;
     const lineTotal = Number((safeUnitPrice * safeQty).toFixed(2));
@@ -247,10 +255,10 @@ export async function createSaleTransaction(
       productId: product.id,
       name: sanitizeStr(product.name, 120),
       barcode: sanitizeStr(product.barcode, 48),
-      unit: sanitizeStr(product.unit, 20),
+      unit: sanitizeStr(saleUnit || product.unit, 20),
       qty: safeQty,
       unitPrice: safeUnitPrice,
-      costPrice: product.costPrice,
+      costPrice: product.costPrice / (saleUnit === product.secondaryUnit ? (product.secondaryUnitQuantity || 1) : 1),
       vatRate: safeVatRate,
       lineTotal,
     };
@@ -332,7 +340,8 @@ export async function createSaleTransaction(
 
   if (payload.status === 'completed') {
     for (const { product, qty } of boundedCart) {
-      const nextStock = Math.max(0, Math.round(product.stock - qty));
+      const ratio = cartItems.find((item) => item.product.id === product.id)?.saleUnit === product.secondaryUnit ? (product.secondaryUnitQuantity || 1) : 1;
+      const nextStock = Math.max(0, Number((product.stock - qty / ratio).toFixed(4)));
       const prodRef = doc(db, 'shops', shop.id, 'products', product.id);
       batch.update(prodRef, {
         stock: nextStock,
@@ -585,6 +594,18 @@ export async function updateShopProfile(shopId: string, input: ShopProfileInput)
     });
   } catch (error) {
     handleDataError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function addShopMarketRoute(shopId: string, currentRoutes: string[], routeName: string): Promise<string[]> {
+  const cleanName = sanitizeStr(routeName, 120);
+  if (!cleanName) throw new Error('Enter a market route name.');
+  const routes = Array.from(new Set([...currentRoutes, cleanName]));
+  try {
+    await updateDoc(doc(db, 'shops', shopId), { marketRoutes: routes, updatedAt: serverTimestamp() });
+    return routes;
+  } catch (error) {
+    handleDataError(error, OperationType.UPDATE, `shops/${shopId}`);
   }
 }
 
