@@ -225,7 +225,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
         showNotice('Maximum 50 distinct SKUs per invoice.');
         return prev;
       }
-      return [...prev, { product, qty: 1, unitPrice: product.sellingPrice, vatRate: product.vatRate }];
+      return [...prev, { product, qty: 1, unitPrice: product.sellingPrice, vatRate: product.vatRate, saleUnit: product.unit }];
     });
   };
 
@@ -236,7 +236,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
           if (item.product.id !== productId) return item;
           const nextQty = item.qty + delta;
           if (nextQty <= 0) return null;
-          if (nextQty > item.product.stock) {
+          const ratio = item.saleUnit === item.product.secondaryUnit ? (item.product.secondaryUnitQuantity || 1) : 1;
+          if (nextQty / ratio > item.product.stock) {
             showNotice(`Max available stock (${item.product.stock}) reached.`);
             return item;
           }
@@ -250,7 +251,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
     setCart((prev) => prev.filter((item) => item.product.id !== productId));
   };
 
-  const updateCartItem = (productId:string, changes:Partial<Pick<CartItem,'unitPrice'|'vatRate'>>) => {
+  const updateCartItem = (productId:string, changes:Partial<Pick<CartItem,'unitPrice'|'vatRate'|'qty'|'saleUnit'>>) => {
     setCart((prev)=>prev.map((item)=>item.product.id===productId?{...item,...changes}:item));
   };
 
@@ -436,7 +437,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
             </p>
           </div>
         ) : (
-          cart.map(({ product, qty, unitPrice, vatRate }) => (
+          cart.map(({ product, qty, unitPrice, vatRate, saleUnit }) => (
             <div key={product.id} className="px-4 py-3 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 text-sm font-medium text-slate-900 truncate">{product.name}</p>
@@ -448,6 +449,11 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 ><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
               <div className="flex items-end gap-2">
+                <label className="w-24 text-[10px] font-medium text-slate-500">Unit
+                  <select value={saleUnit} onChange={(e)=>{const unit=e.target.value;const ratio=unit===product.secondaryUnit?(product.secondaryUnitQuantity||1):1;updateCartItem(product.id,{saleUnit:unit,unitPrice:product.sellingPrice/ratio});}} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-1 text-xs text-slate-900">
+                    <option value={product.unit}>{product.unit}</option>{product.secondaryUnit && <option value={product.secondaryUnit}>{product.secondaryUnit}</option>}
+                  </select>
+                </label>
                 <label className="min-w-0 flex-1 text-[10px] font-medium text-slate-500">Sell rate (৳)
                   <input type="number" min="0" max="10000000" step="0.01" value={unitPrice} onChange={(e)=>updateCartItem(product.id,{unitPrice:Math.min(10000000,Math.max(0,Number(e.target.value)||0))})} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-2 font-mono text-xs text-slate-900 focus:border-emerald-700 focus:outline-none" />
                 </label>
@@ -463,9 +469,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <span className="w-7 text-center font-mono text-sm font-semibold text-slate-900 tabular-nums">
-                  {qty}
-                </span>
+                <input aria-label={`Quantity in ${saleUnit}`} type="number" min="0.01" step="any" value={qty} onChange={(e)=>{const next=Number(e.target.value);const ratio=saleUnit===product.secondaryUnit?(product.secondaryUnitQuantity||1):1;if(next>0 && next/ratio<=product.stock)updateCartItem(product.id,{qty:next});}} className="w-16 min-h-[36px] rounded-lg border border-slate-200 text-center font-mono text-sm" />
                 <button
                   type="button"
                   onClick={() => updateCartQty(product.id, 1)}
@@ -934,7 +938,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                     {product.imageDataUrl && <img src={product.imageDataUrl} alt="" className="mb-2 h-20 w-full rounded-lg object-cover" />}
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-[11px] font-medium text-slate-500 truncate">
-                        {product.category} · {product.unit}
+                        {product.category} · {product.unit}{product.secondaryUnit ? ` / ${product.secondaryUnit}` : ''}
                       </p>
                       {inCartQty > 0 && (
                         <span className="font-mono text-xs font-bold text-emerald-800 tabular-nums shrink-0">
@@ -950,7 +954,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-end justify-between gap-2">
                     <div>
                       <p className="font-mono text-base font-bold text-slate-900 tabular-nums">
-                        {formatBDT(product.sellingPrice, false)}
+                        {formatBDT(product.sellingPrice, false)} / {product.unit}
+                        {product.secondaryUnit && <span className="block text-[10px] text-slate-500">{formatBDT(product.sellingPrice/(product.secondaryUnitQuantity||1),false)} / {product.secondaryUnit} · 1 {product.unit} = {product.secondaryUnitQuantity} {product.secondaryUnit}</span>}
                       </p>
                       <p
                         className={`text-[11px] font-medium tabular-nums ${
@@ -965,7 +970,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                           ? 'Out of stock'
                           : lowStock
                             ? `Low · ${product.stock}`
-                            : `Stock · ${product.stock}`}
+                        : `Stock · ${product.stock} ${product.unit}${product.secondaryUnit ? ` / ${Number((product.stock * (product.secondaryUnitQuantity || 0)).toFixed(2))} ${product.secondaryUnit}` : ''}`}
                       </p>
                     </div>
                     <span className="text-[10px] font-mono text-slate-400 tabular-nums hidden sm:inline">

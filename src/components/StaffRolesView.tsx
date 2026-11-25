@@ -14,6 +14,7 @@ import {
   upsertStaffMember,
   type StaffInput,
 } from '../services/operationsService';
+import { addShopMarketRoute } from '../services/posService';
 
 interface StaffRolesViewProps {
   shop: Shop;
@@ -41,6 +42,23 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
     isActive: true,
   });
   const [saving, setSaving] = useState(false);
+  const [addingRoute, setAddingRoute] = useState(false);
+  const [newRouteName, setNewRouteName] = useState('');
+  const [savingRoute, setSavingRoute] = useState(false);
+  const marketRoutes = Array.from(new Set([...RANGAMATI_ROUTES, ...(shop.marketRoutes || []), ...(form.routeArea ? [form.routeArea] : [])]));
+
+  const handleAddRoute = async () => {
+    if (!newRouteName.trim() || savingRoute) return;
+    setSavingRoute(true);
+    try {
+      await addShopMarketRoute(shop.id, marketRoutes, newRouteName);
+      setForm((current) => ({ ...current, routeArea: newRouteName.trim() }));
+      setNewRouteName('');
+      setAddingRoute(false);
+    } finally {
+      setSavingRoute(false);
+    }
+  };
 
   const metrics = useMemo(() => {
     const active = staff.filter((s) => s.isActive);
@@ -341,12 +359,14 @@ export const StaffRolesView: React.FC<StaffRolesViewProps> = ({
                       onChange={(e) => setForm({ ...form, routeArea: e.target.value })}
                       className="w-full min-h-[40px] px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white text-xs"
                     >
-                      {RANGAMATI_ROUTES.map((r) => (
+                      {marketRoutes.map((r) => (
                         <option key={r} value={r}>
                           {r}
                         </option>
                       ))}
                     </select>
+                    <button type="button" onClick={() => setAddingRoute((open) => !open)} className="mt-1 text-[11px] font-semibold text-emerald-800 hover:underline">{addingRoute ? 'Cancel' : '+ Add market route'}</button>
+                    {addingRoute && <div className="mt-1 flex gap-1"><input value={newRouteName} onChange={(e) => setNewRouteName(e.target.value)} maxLength={120} placeholder="New market route" className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1.5 text-xs"/><button type="button" disabled={savingRoute || !newRouteName.trim()} onClick={() => void handleAddRoute()} className="rounded-md bg-emerald-700 px-2 text-xs font-semibold text-white disabled:opacity-50">{savingRoute ? 'Saving…' : 'Save'}</button></div>}
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">

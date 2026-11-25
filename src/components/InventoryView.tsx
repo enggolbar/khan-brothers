@@ -48,6 +48,10 @@ const EMPTY_FORM: ProductInput = {
   sku: '',
   category: 'Groceries',
   unit: 'pcs',
+  unitQuantity: 1,
+  secondaryUnit: '',
+  secondaryUnitQuantity: 0,
+  priceUnit: 'pcs',
   costPrice: 0,
   sellingPrice: 0,
   vatRate: 5,
@@ -159,8 +163,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
       sku: product.sku,
       category: product.category,
       unit: product.unit,
-      costPrice: product.costPrice,
-      sellingPrice: product.sellingPrice,
+      unitQuantity: product.unitQuantity || 1,
+      secondaryUnit: product.secondaryUnit || '',
+      secondaryUnitQuantity: product.secondaryUnitQuantity || 0,
+      priceUnit: product.priceUnit || 'unit',
+      costPrice: product.priceUnit === 'pcs' ? product.costPrice / (product.unitQuantity || 1) : product.costPrice,
+      sellingPrice: product.priceUnit === 'pcs' ? product.sellingPrice / (product.unitQuantity || 1) : product.sellingPrice,
       vatRate: product.vatRate,
       stock: product.stock,
       reorderLevel: product.reorderLevel,
@@ -411,13 +419,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                           </div>
                         </td>
                         <td className="py-3 px-4 text-xs text-slate-600">
-                          {p.category} · {p.unit}
+                          {p.category} · {p.secondaryUnit ? `1 ${p.unit} = ${p.secondaryUnitQuantity || 0} ${p.secondaryUnit}` : p.unit}
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-xs text-slate-600 tabular-nums">
-                          {formatBDT(p.costPrice)}
+                          {formatBDT(p.costPrice)} / {p.unit}{p.secondaryUnit ? <span className="block text-[10px] text-slate-500">{formatBDT(p.costPrice / (p.secondaryUnitQuantity || 1))} / {p.secondaryUnit}</span> : null}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-semibold text-slate-900 tabular-nums">
-                          {formatBDT(p.sellingPrice)}
+                          {formatBDT(p.sellingPrice)} / {p.unit}{p.secondaryUnit ? <span className="block text-[10px] text-slate-500">{formatBDT(p.sellingPrice / (p.secondaryUnitQuantity || 1))} / {p.secondaryUnit}</span> : null}
                         </td>
                         <td className="py-3 px-4 text-right font-mono text-xs text-slate-600 tabular-nums">
                           {p.vatRate}%
@@ -432,7 +440,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                                   : 'text-emerald-700'
                             }
                           >
-                            {p.stock} {p.unit}
+                            {p.stock} {p.unit}{p.secondaryUnit ? ` (${Number((p.stock * (p.secondaryUnitQuantity || 0)).toFixed(2))} ${p.secondaryUnit})` : ''}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right">
@@ -519,9 +527,19 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                       <button
                         type="button"
                         onClick={() => openEditModal(p)}
+                        aria-label={`Edit ${p.name}`}
                         className="min-h-[36px] px-2.5 py-1 text-slate-700 border border-slate-200 rounded-lg"
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(p)}
+                        aria-label={`Delete ${p.name}`}
+                        title="Delete product"
+                        className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center text-red-600 border border-red-100 bg-red-50 rounded-lg hover:bg-red-100"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -673,21 +691,26 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     />
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Unit</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={20}
-                    value={form.unit}
-                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                    placeholder="pcs / kg / L / pack"
-                    className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700"
-                  />
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-700">Unit Table</label>
+                  <div className="grid grid-cols-[1fr_110px] gap-2">
+                    <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3">
+                      {['pcs','unit','carton','packet','pack','dozen','box','case','bag','bottle','can','jar','sachet','pair','set','kg','g','mg','L','ml','meter','cm','roll','tray','bundle'].map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                    </select>
+                    <input aria-label="Pieces or units per selected unit" type="number" min="1" step="1" value={form.unitQuantity ?? ''} onChange={(e) => setForm({ ...form, unitQuantity: e.target.value === '' ? '' : Number(e.target.value) })} className="min-h-[42px] rounded-lg border border-slate-200 px-3" />
+                  </div>
+                  <div className="grid grid-cols-[1fr_110px] gap-2">
+                    <select value={form.secondaryUnit || ''} onChange={(e) => setForm({ ...form, secondaryUnit: e.target.value })} className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3">
+                      <option value="">Second unit (optional)</option>
+                      {['pcs','unit','carton','packet','pack','dozen','box','case','bag','bottle','can','jar','sachet','pair','set','kg','g','mg','L','ml','meter','cm','roll','tray','bundle'].map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                    </select>
+                    <input aria-label="Pieces or units per second unit" type="number" min="0" step="1" value={form.secondaryUnitQuantity ?? ''} onChange={(e) => setForm({ ...form, secondaryUnitQuantity: e.target.value === '' ? '' : Number(e.target.value) })} disabled={!form.secondaryUnit} placeholder="Qty" className="min-h-[42px] rounded-lg border border-slate-200 px-3 disabled:bg-slate-100" />
+                  </div>
+                  <p className="text-[10px] text-slate-500">Enter how many pcs or base units each selected unit contains.</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Cost (৳)
@@ -698,7 +721,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     step="0.01"
                     required
                     value={form.costPrice}
-                    onChange={(e) => setForm({ ...form, costPrice: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, costPrice: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700 tabular-nums"
                   />
                 </div>
@@ -712,22 +735,15 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     step="0.01"
                     required
                     value={form.sellingPrice}
-                    onChange={(e) => setForm({ ...form, sellingPrice: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, sellingPrice: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700 tabular-nums"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">VAT (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="30"
-                    step="0.5"
-                    required
-                    value={form.vatRate}
-                    onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })}
-                    className="w-full min-h-[42px] px-3 py-2 font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700 tabular-nums"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Price entered per</label>
+                  <select value={form.priceUnit || 'pcs'} onChange={(e) => setForm({ ...form, priceUnit: e.target.value as 'pcs' | 'unit' })} className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg bg-white">
+                    <option value="pcs">Piece (pcs)</option><option value="unit">Selected unit ({form.unit})</option>
+                  </select>
                 </div>
               </div>
 
@@ -741,7 +757,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     min="0"
                     required
                     value={form.stock}
-                    onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, stock: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700 tabular-nums"
                   />
                 </div>
@@ -754,7 +770,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     min="0"
                     required
                     value={form.reorderLevel}
-                    onChange={(e) => setForm({ ...form, reorderLevel: Number(e.target.value) })}
+                    onChange={(e) => setForm({ ...form, reorderLevel: e.target.value === '' ? '' : Number(e.target.value) })}
                     className="w-full min-h-[42px] px-3 py-2 font-mono border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700 tabular-nums"
                   />
                 </div>

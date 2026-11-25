@@ -47,6 +47,7 @@ export interface Shop {
   binNumber: string;
   defaultVatRate: number;
   receiptFooter: string;
+  marketRoutes?: string[];
   plan: PlanId;
   currency: 'BDT';
   invoiceCounter: number;
@@ -68,6 +69,10 @@ export interface Product {
   description?: string;
   imageDataUrl?: string;
   unit: string;
+  unitQuantity?: number;
+  secondaryUnit?: string;
+  secondaryUnitQuantity?: number;
+  priceUnit?: 'pcs' | 'unit';
   costPrice: number;
   sellingPrice: number;
   vatRate: number;
@@ -303,13 +308,14 @@ export interface LedgerEntry {
 
 export const RANGAMATI_ROUTES = [
   'Mainimukh Bazar',
-  'Dongudu & Langadu',
-  'Baghaichhari',
-  'Marishya Bazar',
-  'Rangamati Sadar',
-  'Dighinala Market',
-  'Naniarchar',
-  'Barkal & Subalong',
+  'Longodu,baittapara',
+  'Bairagi Bazar',
+  'Islamabad, Sonai 5No,3bridge,Korlachhari',
+  'Rashidpur,Chumoni,Shibir bazar,Kalapakujya',
+  'Mahilya',
+  'Bhai bon chora',
+  'Challatuli,VhashinnaAdam bazar',
+  'Ghulshakhali,chumoni,Rajgong',
 ] as const;
 
 export const EXPENSE_CATEGORIES = [
@@ -345,6 +351,7 @@ export interface CartItem {
   qty: number;
   unitPrice: number;
   vatRate: number;
+  saleUnit: string;
 }
 
 export interface SaasPlanSpec {
