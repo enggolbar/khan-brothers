@@ -234,16 +234,13 @@ export interface CreatePurchaseInput {
   supplier: Supplier;
   branchName: string;
   items: PurchaseItem[];
-  paidAmount: number;
-  receiveImmediately: boolean;
   notes: string;
 }
 
 export async function createPurchaseOrder(
   shopId: string,
   ownerId: string,
-  input: CreatePurchaseInput,
-  productsMap: Map<string, Product>
+  input: CreatePurchaseInput
 ): Promise<string> {
   const boundedItems = input.items.slice(0, 50);
   if (boundedItems.length === 0) {
@@ -254,8 +251,6 @@ export async function createPurchaseOrder(
   const poNumber = `PO-${new Date().getFullYear()}-${String(Date.now()).slice(-5)}`;
   const itemCount = boundedItems.reduce((sum, i) => sum + i.qty, 0);
   const totalCost = Number(boundedItems.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
-  const paidAmount = Number(Math.min(totalCost, Math.max(0, input.paidAmount)).toFixed(2));
-  const status = input.receiveImmediately ? 'received' : 'ordered';
   const supplierLabel = sanitizeStr(input.supplier.company || input.supplier.name, 100);
 
   const batch = writeBatch(db);
@@ -268,73 +263,15 @@ export async function createPurchaseOrder(
     supplierId: input.supplier.id,
     supplierName: supplierLabel,
     branchName: sanitizeStr(input.branchName, 80) || 'Main Branch',
-    items: boundedItems,
+    items: boundedItems.map((item) => ({ ...item, receivedQty: 0 })),
     itemCount,
     totalCost,
-    paidAmount,
-    status,
+    paidAmount: 0,
+    status: 'ordered',
     notes: sanitizeStr(input.notes, 200),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
-
-  if (input.receiveImmediately) {
-    for (const item of boundedItems) {
-      const existing = productsMap.get(item.productId);
-      if (existing) {
-        const prodRef = doc(db, 'shops', shopId, 'products', existing.id);
-        batch.update(prodRef, {
-          stock: Math.min(10000000, Math.round(existing.stock + item.qty)),
-          costPrice: Math.min(10000000, Math.max(0, item.unitCost)),
-          updatedAt: serverTimestamp(),
-        });
-      }
-    }
-
-    const dueDelta = Math.max(0, totalCost - paidAmount);
-    const supRef = doc(db, 'shops', shopId, 'suppliers', input.supplier.id);
-    batch.update(supRef, {
-      totalPurchased: Number((input.supplier.totalPurchased + totalCost).toFixed(2)),
-      balanceDue: Number((input.supplier.balanceDue + dueDelta).toFixed(2)),
-      updatedAt: serverTimestamp(),
-    });
-
-    const today = new Date().toISOString().slice(0, 10);
-    if (totalCost > 0) {
-      batch.set(doc(db, 'shops', shopId, 'ledgerEntries', createSafeId('led')), {
-        shopId,
-        ownerId,
-        partyType: 'supplier',
-        partyId: input.supplier.id,
-        partyName: supplierLabel,
-        entryType: 'purchase_due',
-        amount: totalCost,
-        paymentMethod: 'credit',
-        reference: poNumber,
-        notes: `Stock received (${itemCount} units)`,
-        entryDate: today,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    if (paidAmount > 0) {
-      batch.set(doc(db, 'shops', shopId, 'ledgerEntries', createSafeId('led')), {
-        shopId,
-        ownerId,
-        partyType: 'supplier',
-        partyId: input.supplier.id,
-        partyName: supplierLabel,
-        entryType: 'supplier_payment',
-        amount: paidAmount,
-        paymentMethod: 'cash',
-        reference: poNumber,
-        notes: `Cash paid on PO ${poNumber}`,
-        entryDate: today,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-  }
 
   try {
     await batch.commit();
@@ -347,26 +284,42 @@ export async function createPurchaseOrder(
 export async function receivePurchaseOrder(
   shopId: string,
   po: PurchaseOrder,
-  paidAmount: number,
+  receiveQuantities: Record<string, number>,
   productsMap: Map<string, Product>,
   supplier: Supplier | null
 ): Promise<void> {
-  const safePaid = Number(Math.min(po.totalCost, Math.max(0, paidAmount)).toFixed(2));
+  const receivedItems = po.items.map((item) => {
+    const alreadyReceived = Math.max(0, Number(item.receivedQty) || 0);
+    const remaining = Math.max(0, item.qty - alreadyReceived);
+    const quantity = Math.min(remaining, Math.max(0, Math.floor(Number(receiveQuantities[item.productId]) || 0)));
+    return { ...item, alreadyReceived, quantity };
+  });
+  const receivedNow = receivedItems.filter((item) => item.quantity > 0);
+  if (receivedNow.length === 0) throw new Error('Enter at least one quantity to receive.');
+  const receivedValue = Number(receivedNow.reduce((sum, item) => sum + item.quantity * item.unitCost, 0).toFixed(2));
+  const nextReceivedCost = Number(((po.receivedCost || 0) + receivedValue).toFixed(2));
+  const nextItems = po.items.map((item) => {
+    const received = receivedItems.find((candidate) => candidate.productId === item.productId);
+    return { ...item, receivedQty: (received?.alreadyReceived || 0) + (received?.quantity || 0) };
+  });
+  const allReceived = nextItems.every((item) => (item.receivedQty || 0) >= item.qty);
   const batch = writeBatch(db);
   const poRef = doc(db, 'shops', shopId, 'purchases', po.id);
 
   batch.update(poRef, {
-    status: 'received',
-    paidAmount: safePaid,
+    status: allReceived ? 'received' : 'partially_received',
+    items: nextItems,
+    receivedCost: nextReceivedCost,
+    receivedItemCount: nextItems.reduce((sum, item) => sum + (item.receivedQty || 0), 0),
     updatedAt: serverTimestamp(),
   });
 
-  for (const item of po.items) {
+  for (const item of receivedNow) {
     const existing = productsMap.get(item.productId);
     if (existing) {
       const prodRef = doc(db, 'shops', shopId, 'products', existing.id);
       batch.update(prodRef, {
-        stock: Math.min(10000000, Math.round(existing.stock + item.qty)),
+        stock: Math.min(10000000, Math.round(existing.stock + item.quantity)),
         costPrice: Math.min(10000000, Math.max(0, item.unitCost)),
         updatedAt: serverTimestamp(),
       });
@@ -374,17 +327,16 @@ export async function receivePurchaseOrder(
   }
 
   if (supplier) {
-    const dueDelta = Math.max(0, po.totalCost - safePaid);
     const supRef = doc(db, 'shops', shopId, 'suppliers', supplier.id);
     batch.update(supRef, {
-      totalPurchased: Number((supplier.totalPurchased + po.totalCost).toFixed(2)),
-      balanceDue: Number((supplier.balanceDue + dueDelta).toFixed(2)),
+      totalPurchased: Number((supplier.totalPurchased + receivedValue).toFixed(2)),
+      balanceDue: Number((supplier.balanceDue + receivedValue).toFixed(2)),
       updatedAt: serverTimestamp(),
     });
 
     const today = new Date().toISOString().slice(0, 10);
     const supplierLabel = sanitizeStr(supplier.company || supplier.name, 100);
-    if (po.totalCost > 0) {
+    if (receivedValue > 0) {
       batch.set(doc(db, 'shops', shopId, 'ledgerEntries', createSafeId('led')), {
         shopId,
         ownerId: supplier.ownerId,
@@ -392,27 +344,10 @@ export async function receivePurchaseOrder(
         partyId: supplier.id,
         partyName: supplierLabel,
         entryType: 'purchase_due',
-        amount: po.totalCost,
+        amount: receivedValue,
         paymentMethod: 'credit',
         reference: po.poNumber,
-        notes: `Received PO ${po.poNumber} (${po.itemCount} units)`,
-        entryDate: today,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-    if (safePaid > 0) {
-      batch.set(doc(db, 'shops', shopId, 'ledgerEntries', createSafeId('led')), {
-        shopId,
-        ownerId: supplier.ownerId,
-        partyType: 'supplier',
-        partyId: supplier.id,
-        partyName: supplierLabel,
-        entryType: 'supplier_payment',
-        amount: safePaid,
-        paymentMethod: 'cash',
-        reference: po.poNumber,
-        notes: `Cash paid on PO ${po.poNumber}`,
+        notes: `Received ${receivedNow.reduce((sum, item) => sum + item.quantity, 0)} units for PO ${po.poNumber}`,
         entryDate: today,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -445,12 +380,29 @@ export async function payPurchaseOrderBalance(
   po: PurchaseOrder,
   supplier: Supplier | null
 ): Promise<void> {
-  const remaining = Number(Math.max(0, po.totalCost - po.paidAmount).toFixed(2));
+  const billed = po.receivedCost ?? po.totalCost;
+  const remaining = Number(Math.max(0, billed - po.paidAmount).toFixed(2));
   if (remaining <= 0) return;
 
   const batch = writeBatch(db);
   batch.update(doc(db, 'shops', shopId, 'purchases', po.id), {
-    paidAmount: po.totalCost,
+    paidAmount: Number((po.paidAmount + remaining).toFixed(2)),
+    updatedAt: serverTimestamp(),
+  });
+
+  const expenseId = createSafeId('exp');
+  batch.set(doc(db, 'shops', shopId, 'expenses', expenseId), {
+    shopId,
+    ownerId: po.ownerId,
+    title: `Supplier bill ${po.poNumber}`,
+    category: 'Stock Purchase',
+    amount: remaining,
+    paymentMethod: 'cash',
+    branchName: po.branchName || 'Main Branch',
+    reference: po.poNumber,
+    notes: `Paid supplier bill for ${po.supplierName}`,
+    expenseDate: new Date().toISOString().slice(0, 10),
+    createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 

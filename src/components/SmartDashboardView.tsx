@@ -149,7 +149,7 @@ export const SmartDashboardView: React.FC<SmartDashboardViewProps> = ({
   }, [srOrders]);
 
   const pendingPos = useMemo(
-    () => purchases.filter((p) => p.status === 'ordered'),
+    () => purchases.filter((p) => p.status === 'ordered' || p.status === 'partially_received'),
     [purchases]
   );
 

@@ -4,7 +4,7 @@ export type PlanId = 'starter' | 'growth' | 'enterprise';
 export type PaymentMethod = 'cash' | 'bkash' | 'nagad' | 'rocket' | 'card' | 'split' | 'credit';
 export type SaleStatus = 'completed' | 'held' | 'refunded' | 'voided';
 export type ExpensePaymentMethod = 'cash' | 'bkash' | 'nagad' | 'bank';
-export type PurchaseStatus = 'ordered' | 'received' | 'cancelled';
+export type PurchaseStatus = 'ordered' | 'partially_received' | 'received' | 'cancelled';
 export type ShiftStatus = 'open' | 'closed';
 export type StaffRole = 'manager' | 'cashier' | 'inventory' | 'accountant' | 'sr';
 export type CustomerType = 'retail' | 'wholesale';
@@ -176,6 +176,7 @@ export interface PurchaseItem {
   sku: string;
   unit: string;
   qty: number;
+  receivedQty?: number;
   unitCost: number;
   lineTotal: number;
 }
@@ -191,6 +192,8 @@ export interface PurchaseOrder {
   items: PurchaseItem[];
   itemCount: number;
   totalCost: number;
+  receivedCost?: number;
+  receivedItemCount?: number;
   paidAmount: number;
   status: PurchaseStatus;
   notes: string;

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ClipboardList,
+  Printer,
   Plus,
   Trash2,
   X,
@@ -46,9 +47,9 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
   const [lineQty, setLineQty] = useState('20');
   const [lineCost, setLineCost] = useState('');
   const [poItems, setPoItems] = useState<PurchaseItem[]>([]);
-  const [paidInput, setPaidInput] = useState('');
-  const [receiveNow, setReceiveNow] = useState(true);
   const [notes, setNotes] = useState('');
+  const [receivingPo, setReceivingPo] = useState<PurchaseOrder | null>(null);
+  const [receiveInputs, setReceiveInputs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -74,11 +75,9 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
     let openCount = 0;
     let unpaidTotal = 0;
     for (const po of purchases) {
-      if (po.status === 'ordered') openCount++;
-      if (po.status === 'received') {
-        receivedValue += po.totalCost;
-        unpaidTotal += Math.max(0, po.totalCost - po.paidAmount);
-      }
+      if (po.status === 'ordered' || po.status === 'partially_received') openCount++;
+      receivedValue += po.receivedCost ?? (po.status === 'received' ? po.totalCost : 0);
+      unpaidTotal += Math.max(0, (po.receivedCost ?? (po.status === 'received' ? po.totalCost : 0)) - po.paidAmount);
     }
     return { receivedValue, openCount, unpaidTotal };
   }, [purchases]);
@@ -133,7 +132,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
 
     setSaving(true);
     try {
-      const paidAmt = paidInput === '' ? poTotal : Math.max(0, Number(paidInput) || 0);
       await createPurchaseOrder(
         shop.id,
         shop.ownerId,
@@ -141,15 +139,11 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
           supplier,
           branchName: activeBranchName,
           items: poItems,
-          paidAmount: paidAmt,
-          receiveImmediately: receiveNow,
           notes,
-        },
-        productsMap
+        }
       );
       setModalOpen(false);
       setPoItems([]);
-      setPaidInput('');
       setNotes('');
     } finally {
       setSaving(false);
@@ -157,15 +151,18 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
   };
 
   const handleReceive = async (po: PurchaseOrder) => {
+    const quantities = Object.fromEntries(po.items.map((item) => [item.productId, Number(receiveInputs[item.productId]) || 0]));
     setBusyId(po.id);
     try {
       await receivePurchaseOrder(
         shop.id,
         po,
-        po.paidAmount,
+        quantities,
         productsMap,
         suppliersMap.get(po.supplierId) || null
       );
+      setReceivingPo(null);
+      setReceiveInputs({});
     } finally {
       setBusyId(null);
     }
@@ -178,6 +175,50 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
     } finally {
       setBusyId(null);
     }
+  };
+
+  const openReceiveModal = (po: PurchaseOrder) => {
+    setReceivingPo(po);
+    setReceiveInputs(Object.fromEntries(po.items.map((item) => [item.productId, '0'])));
+  };
+
+  const handlePrintBill = (po: PurchaseOrder) => {
+    const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] || char));
+    const money = (value: number) => formatBDT(value).replace(/^৳\s*/, '৳ ');
+    const rows = po.items
+      .filter((item) => (item.receivedQty || 0) > 0 || po.status === 'received')
+      .map((item, index) => {
+        const receivedQty = item.receivedQty ?? (po.status === 'received' ? item.qty : 0);
+        const amount = Number((receivedQty * item.unitCost).toFixed(2));
+        return `<tr><td>${index + 1}</td><td><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.sku)}</small></td><td class="num">${item.qty} ${escapeHtml(item.unit)}</td><td class="num">${receivedQty} ${escapeHtml(item.unit)}</td><td class="num">${money(item.unitCost)}</td><td class="num">${money(amount)}</td></tr>`;
+      }).join('');
+    const billTotal = po.receivedCost ?? (po.status === 'received' ? po.totalCost : 0);
+    const due = Math.max(0, billTotal - po.paidAmount);
+    const supplier = suppliersMap.get(po.supplierId);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Purchase Bill ${escapeHtml(po.poNumber)}</title><style>
+      @page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#172033;font:12px Arial,sans-serif}.sheet{max-width:190mm;margin:auto}.head{display:flex;justify-content:space-between;border-bottom:2px solid #143c8c;padding-bottom:14px}.head h1{font-size:21px;color:#143c8c;margin:0 0 5px}.muted{color:#64748b;line-height:1.6}.title{text-align:right}.title h2{font-size:23px;margin:0 0 6px;text-transform:uppercase}.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.box{border:1px solid #dbe3ef;border-radius:6px;background:#f8fafc;padding:11px;line-height:1.7}.box h3{font-size:10px;color:#2563eb;margin:0 0 5px;text-transform:uppercase}table{width:100%;border-collapse:collapse;margin-top:18px}th{background:#111a30;color:white;text-align:left;padding:9px 7px;font-size:10px}td{padding:9px 7px;border-bottom:1px solid #dbe3ef}td small{display:block;color:#64748b;margin-top:3px}.num{text-align:right;font-variant-numeric:tabular-nums}.totals{width:280px;margin:18px 0 0 auto}.totals div{display:flex;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #e2e8f0}.totals .grand{font-size:15px;font-weight:bold;background:#111a30;color:white}.sign{display:flex;justify-content:space-between;margin:65px 18px 0}.sign span{width:190px;border-top:1px solid #64748b;text-align:center;padding-top:7px}.foot{margin-top:32px;padding-top:9px;border-top:1px solid #dbe3ef;text-align:center;color:#64748b;font-size:10px}
+    </style></head><body><main class="sheet"><header class="head"><div><h1>${escapeHtml(shop.name)}</h1><div class="muted">${escapeHtml(po.branchName || shop.branchName)}${shop.address ? `<br>${escapeHtml(shop.address)}` : ''}${shop.phone ? `<br>Tel: ${escapeHtml(shop.phone)}` : ''}</div></div><div class="title"><h2>Purchase Bill</h2><strong>${escapeHtml(po.poNumber)}</strong><div class="muted">${escapeHtml(formatDateTimeBD(po.createdAt))}</div></div></header><section class="meta"><div class="box"><h3>Supplier</h3><strong>${escapeHtml(po.supplierName)}</strong>${supplier?.phone ? `<br>${escapeHtml(supplier.phone)}` : ''}</div><div class="box"><h3>Delivery & payment</h3><div>Branch: ${escapeHtml(po.branchName)}</div><div>Received: ${po.receivedItemCount ?? po.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0)} of ${po.itemCount} units</div><div>Status: ${due > 0 ? 'Unpaid' : 'Paid'}</div></div></section><table><thead><tr><th>#</th><th>Product</th><th class="num">Ordered</th><th class="num">Received</th><th class="num">Unit cost</th><th class="num">Amount</th></tr></thead><tbody>${rows}</tbody></table><section class="totals"><div class="grand"><span>Received Bill Total</span><strong>${money(billTotal)}</strong></div><div><span>Paid</span><strong>${money(po.paidAmount)}</strong></div><div><span>Balance Due</span><strong>${money(due)}</strong></div></section>${po.notes ? `<p class="muted">Note: ${escapeHtml(po.notes)}</p>` : ''}<section class="sign"><span>Authorized Signature</span><span>Supplier Signature</span></section><footer class="foot">${escapeHtml(shop.name)} · ${escapeHtml(po.poNumber)}</footer></main><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { window.alert('Allow pop-ups to print or save this bill as PDF.'); return; }
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handlePrintOrder = (po: PurchaseOrder) => {
+    const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] || char));
+    const money = (value: number) => formatBDT(value).replace(/^৳\s*/, '৳ ');
+    const rows = po.items.map((item, index) => {
+      const received = item.receivedQty ?? (po.status === 'received' ? item.qty : 0);
+      return `<tr><td>${index + 1}</td><td><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.sku)}</small></td><td>${escapeHtml(item.unit)}</td><td class="num">${item.qty}</td><td class="num">${money(item.unitCost)}</td><td class="num">${money(item.lineTotal)}</td><td class="num">${received} / ${item.qty}</td></tr>`;
+    }).join('');
+    const supplier = suppliersMap.get(po.supplierId);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Purchase Order ${escapeHtml(po.poNumber)}</title><style>
+      @page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#172033;font:12px Arial,sans-serif}.sheet{max-width:190mm;margin:auto}.head{display:flex;justify-content:space-between;border-bottom:2px solid #143c8c;padding-bottom:14px}.head h1{font-size:21px;color:#143c8c;margin:0 0 5px}.muted{color:#64748b;line-height:1.6}.title{text-align:right}.title h2{font-size:23px;margin:0 0 6px;text-transform:uppercase}.meta{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.box{border:1px solid #dbe3ef;border-radius:6px;background:#f8fafc;padding:11px;line-height:1.7}.box h3{font-size:10px;color:#2563eb;margin:0 0 5px;text-transform:uppercase}table{width:100%;border-collapse:collapse;margin-top:18px}th{background:#111a30;color:white;text-align:left;padding:9px 7px;font-size:10px}td{padding:9px 7px;border-bottom:1px solid #dbe3ef}td small{display:block;color:#64748b;margin-top:3px}.num{text-align:right;font-variant-numeric:tabular-nums}.total{width:280px;margin:18px 0 0 auto;padding:12px;background:#111a30;color:white;display:flex;justify-content:space-between;font-size:15px;font-weight:bold}.sign{display:flex;justify-content:space-between;margin:65px 18px 0}.sign span{width:190px;border-top:1px solid #64748b;text-align:center;padding-top:7px}.foot{margin-top:32px;padding-top:9px;border-top:1px solid #dbe3ef;text-align:center;color:#64748b;font-size:10px}
+    </style></head><body><main class="sheet"><header class="head"><div><h1>${escapeHtml(shop.name)}</h1><div class="muted">${escapeHtml(po.branchName || shop.branchName)}${shop.address ? `<br>${escapeHtml(shop.address)}` : ''}${shop.phone ? `<br>Tel: ${escapeHtml(shop.phone)}` : ''}</div></div><div class="title"><h2>Purchase Order</h2><strong>${escapeHtml(po.poNumber)}</strong><div class="muted">${escapeHtml(formatDateTimeBD(po.createdAt))}</div></div></header><section class="meta"><div class="box"><h3>Supplier</h3><strong>${escapeHtml(po.supplierName)}</strong>${supplier?.phone ? `<br>${escapeHtml(supplier.phone)}` : ''}</div><div class="box"><h3>Order details</h3><div>Branch: ${escapeHtml(po.branchName)}</div><div>Status: ${escapeHtml(po.status.replace('_', ' '))}</div><div>Received: ${po.receivedItemCount ?? po.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0)} / ${po.itemCount} units</div></div></section><table><thead><tr><th>#</th><th>Product</th><th>Unit</th><th class="num">Order qty</th><th class="num">Unit cost</th><th class="num">Amount</th><th class="num">Received / ordered</th></tr></thead><tbody>${rows}</tbody></table><div class="total"><span>Order Total</span><strong>${money(po.totalCost)}</strong></div>${po.notes ? `<p class="muted">Note: ${escapeHtml(po.notes)}</p>` : ''}<section class="sign"><span>Authorized Signature</span><span>Supplier Signature</span></section><footer class="foot">${escapeHtml(shop.name)} · ${escapeHtml(po.poNumber)}</footer></main><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { window.alert('Allow pop-ups to print or save this purchase order as PDF.'); return; }
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const handleCancel = async (po: PurchaseOrder) => {
@@ -277,7 +318,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                   <th className="py-3 px-4">PO # &amp; Date</th>
                   <th className="py-3 px-4">Supplier</th>
                   <th className="py-3 px-4 text-right">Units</th>
-                  <th className="py-3 px-4 text-right">Total Cost</th>
+                  <th className="py-3 px-4 text-right">Received Bill / Order</th>
                   <th className="py-3 px-4 text-right">Paid</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Actions</th>
@@ -285,7 +326,9 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
                 {purchases.map((po) => {
-                  const due = Math.max(0, po.totalCost - po.paidAmount);
+                  const receivedCost = po.receivedCost ?? (po.status === 'received' ? po.totalCost : 0);
+                  const due = Math.max(0, receivedCost - po.paidAmount);
+                  const receivedUnits = po.receivedItemCount ?? (po.status === 'received' ? po.itemCount : po.items.reduce((sum, item) => sum + (item.receivedQty || 0), 0));
                   return (
                     <tr key={po.id} className="hover:bg-slate-50/70">
                       <td className="py-3 px-4">
@@ -303,10 +346,12 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                         </p>
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-xs tabular-nums">
-                        {po.itemCount}
+                        <span>{receivedUnits} / {po.itemCount}</span>
+                        {po.itemCount > receivedUnits && <span className="block text-[10px] text-amber-700">{po.itemCount - receivedUnits} pending</span>}
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-xs font-semibold text-slate-900 tabular-nums">
-                        {formatBDT(po.totalCost, false)}
+                        <span>{formatBDT(receivedCost, false)}</span>
+                        <span className="block text-[10px] font-normal text-slate-500">of {formatBDT(po.totalCost, false)}</span>
                       </td>
                       <td className="py-3 px-4 text-right font-mono text-xs tabular-nums">
                         <span className={due > 0 ? 'text-amber-700 font-semibold' : 'text-emerald-700'}>
@@ -318,7 +363,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                           className={
                             po.status === 'received'
                               ? 'text-emerald-700'
-                              : po.status === 'ordered'
+                              : po.status === 'ordered' || po.status === 'partially_received'
                                 ? 'text-amber-700'
                                 : 'text-red-700'
                           }
@@ -328,12 +373,30 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="inline-flex items-center gap-1.5">
-                          {po.status === 'ordered' && (
+                          <button
+                            type="button"
+                            onClick={() => handlePrintOrder(po)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>PO / PDF</span>
+                          </button>
+                          {receivedCost > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handlePrintBill(po)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-md cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Bill / PDF</span>
+                            </button>
+                          )}
+                          {(po.status === 'ordered' || po.status === 'partially_received') && (
                             <>
                               <button
                                 type="button"
                                 disabled={busyId === po.id}
-                                onClick={() => void handleReceive(po)}
+                                onClick={() => openReceiveModal(po)}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-md cursor-pointer"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5" />
@@ -350,7 +413,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                               </button>
                             </>
                           )}
-                          {po.status === 'received' && due > 0 && (
+                          {receivedCost > po.paidAmount && due > 0 && (
                             <button
                               type="button"
                               disabled={busyId === po.id}
@@ -504,23 +567,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Paid Now (BDT)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={poTotal}
-                        step="0.01"
-                        placeholder={String(poTotal)}
-                        value={paidInput}
-                        onChange={(e) => setPaidInput(e.target.value)}
-                        className="w-full min-h-[42px] px-3 py-2 font-mono text-xs border border-slate-200 rounded-lg tabular-nums"
-                      />
-                    </div>
-                    <div>
+                  <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Delivery Note
                       </label>
@@ -533,17 +580,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                         className="w-full min-h-[42px] px-3 py-2 text-xs border border-slate-200 rounded-lg"
                       />
                     </div>
-                  </div>
-
-                  <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={receiveNow}
-                      onChange={(e) => setReceiveNow(e.target.checked)}
-                      className="w-4 h-4 accent-emerald-700"
-                    />
-                    <span>Receive stock immediately and increment inventory quantities now</span>
-                  </label>
                 </>
               )}
             </div>
@@ -561,12 +597,46 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({
                 disabled={saving || poItems.length === 0 || !supplierId}
                 className="min-h-[42px] px-5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-lg cursor-pointer"
               >
-                {saving
-                  ? 'Saving...'
-                  : receiveNow
-                    ? 'Save & Receive Stock'
-                    : 'Create Ordered PO'}
+                {saving ? 'Saving...' : 'Create Pending PO'}
               </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {receivingPo && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true">
+          <form
+            onSubmit={(event) => { event.preventDefault(); void handleReceive(receivingPo); }}
+            className="bg-white w-full sm:max-w-lg max-h-[90vh] rounded-t-2xl sm:rounded-xl border border-slate-200 flex flex-col overflow-hidden"
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h2 className="font-display text-base font-bold text-slate-900">Receive Purchase Order</h2>
+                <p className="text-xs text-slate-500">{receivingPo.poNumber} · enter quantities received now</p>
+              </div>
+              <button type="button" onClick={() => setReceivingPo(null)} className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg text-slate-500 cursor-pointer"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto divide-y divide-slate-100">
+              {receivingPo.items.map((item) => {
+                const received = item.receivedQty || 0;
+                const remaining = Math.max(0, item.qty - received);
+                return (
+                  <div key={item.productId} className="py-3 first:pt-0 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                      <p className="text-xs text-slate-500">Received {received} / {item.qty} {item.unit} · {remaining} pending</p>
+                    </div>
+                    <label className="w-28 text-[10px] font-medium text-slate-500">Receive now
+                      <input type="number" min="0" max={remaining} step="1" value={receiveInputs[item.productId] ?? '0'} onChange={(e) => setReceiveInputs((current) => ({ ...current, [item.productId]: e.target.value }))} className="mt-1 w-full min-h-[38px] px-2 font-mono text-sm border border-slate-200 rounded-lg" />
+                    </label>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button type="button" onClick={() => setReceivingPo(null)} className="min-h-[42px] px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg cursor-pointer">Cancel</button>
+              <button type="submit" disabled={busyId === receivingPo.id || !Object.values(receiveInputs).some((value) => Number(value) > 0)} className="min-h-[42px] px-5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 rounded-lg cursor-pointer">{busyId === receivingPo.id ? 'Receiving...' : 'Confirm Received Stock'}</button>
             </div>
           </form>
         </div>
