@@ -259,7 +259,6 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
   const clearCart = () => {
     setCart([]);
     setDiscountInput('');
-    setVatEnabled(true);
     setPaymentRef('');
     setPaidInput('');
     setSelectedCustomerId('');
@@ -359,6 +358,8 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       } else {
         showNotice(`Bill ${createdSale.invoiceNumber} saved to Held Carts.`);
       }
+    } catch (error) {
+      showNotice(error instanceof Error ? `Sale was not saved: ${error.message}` : 'Sale was not saved. Please try again.');
     } finally {
       setSubmitting(false);
     }
