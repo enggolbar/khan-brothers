@@ -136,7 +136,7 @@ export interface ProductInput {
   unitQuantity?: number | '';
   secondaryUnit?: string;
   secondaryUnitQuantity?: number | '';
-  priceUnit?: 'pcs' | 'unit';
+  priceUnit?: 'pcs' | 'unit' | 'secondary';
   costPrice: number | '';
   sellingPrice: number | '';
   vatRate: number;
@@ -169,9 +169,9 @@ export async function upsertProduct(
     unitQuantity: Math.max(1, Math.floor(Number(input.unitQuantity) || 1)),
     secondaryUnit: sanitizeStr(input.secondaryUnit || '', 20),
     secondaryUnitQuantity: Math.max(0, Math.floor(Number(input.secondaryUnitQuantity) || 0)),
-    priceUnit: input.priceUnit === 'unit' ? 'unit' : 'pcs',
-    costPrice: Math.min(10000000, Math.max(0, Number(input.costPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : 1)),
-    sellingPrice: Math.min(10000000, Math.max(0, Number(input.sellingPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : 1)),
+    priceUnit: input.priceUnit === 'secondary' ? 'secondary' : input.priceUnit === 'unit' ? 'unit' : 'pcs',
+    costPrice: Math.min(10000000, Math.max(0, Number(input.costPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : input.priceUnit === 'secondary' ? Math.max(1, Number(input.secondaryUnitQuantity) || 1) : 1)),
+    sellingPrice: Math.min(10000000, Math.max(0, Number(input.sellingPrice) || 0) * (input.priceUnit === 'pcs' ? Math.max(1, Number(input.unitQuantity) || 1) : input.priceUnit === 'secondary' ? Math.max(1, Number(input.secondaryUnitQuantity) || 1) : 1)),
     vatRate: Math.min(30, Math.max(0, Number(input.vatRate) || 0)),
     stock: Math.min(10000000, Math.max(0, Number(input.stock) || 0)),
     reorderLevel: Math.min(1000000, Math.max(0, Number(input.reorderLevel) || 0)),

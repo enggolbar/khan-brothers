@@ -72,7 +72,7 @@ export interface Product {
   unitQuantity?: number;
   secondaryUnit?: string;
   secondaryUnitQuantity?: number;
-  priceUnit?: 'pcs' | 'unit';
+  priceUnit?: 'pcs' | 'unit' | 'secondary';
   costPrice: number;
   sellingPrice: number;
   vatRate: number;

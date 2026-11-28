@@ -51,7 +51,7 @@ const EMPTY_FORM: ProductInput = {
   unitQuantity: 1,
   secondaryUnit: '',
   secondaryUnitQuantity: 0,
-  priceUnit: 'pcs',
+  priceUnit: 'unit',
   costPrice: 0,
   sellingPrice: 0,
   vatRate: 5,
@@ -167,8 +167,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
       secondaryUnit: product.secondaryUnit || '',
       secondaryUnitQuantity: product.secondaryUnitQuantity || 0,
       priceUnit: product.priceUnit || 'unit',
-      costPrice: product.priceUnit === 'pcs' ? product.costPrice / (product.unitQuantity || 1) : product.costPrice,
-      sellingPrice: product.priceUnit === 'pcs' ? product.sellingPrice / (product.unitQuantity || 1) : product.sellingPrice,
+      costPrice: product.priceUnit === 'pcs' ? product.costPrice / (product.unitQuantity || 1) : product.priceUnit === 'secondary' ? product.costPrice / (product.secondaryUnitQuantity || 1) : product.costPrice,
+      sellingPrice: product.priceUnit === 'pcs' ? product.sellingPrice / (product.unitQuantity || 1) : product.priceUnit === 'secondary' ? product.sellingPrice / (product.secondaryUnitQuantity || 1) : product.sellingPrice,
       vatRate: product.vatRate,
       stock: product.stock,
       reorderLevel: product.reorderLevel,
@@ -660,7 +660,32 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-semibold text-slate-700">Category</label>
+                    {!customCategory ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomCategory(true);
+                          setForm({ ...form, category: '' });
+                        }}
+                        className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800"
+                      >
+                        + Add new
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomCategory(false);
+                          setForm({ ...form, category: categories.includes(form.category) ? form.category : '' });
+                        }}
+                        className="text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+                      >
+                        Choose existing
+                      </button>
+                    )}
+                  </div>
                   <select
                     value={customCategory ? CUSTOM_CATEGORY_OPTION : form.category}
                     onChange={(e) => {
@@ -700,7 +725,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                     <input aria-label="Pieces or units per selected unit" type="number" min="1" step="1" value={form.unitQuantity ?? ''} onChange={(e) => setForm({ ...form, unitQuantity: e.target.value === '' ? '' : Number(e.target.value) })} className="min-h-[42px] rounded-lg border border-slate-200 px-3" />
                   </div>
                   <div className="grid grid-cols-[1fr_110px] gap-2">
-                    <select value={form.secondaryUnit || ''} onChange={(e) => setForm({ ...form, secondaryUnit: e.target.value })} className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3">
+                    <select value={form.secondaryUnit || ''} onChange={(e) => setForm({ ...form, secondaryUnit: e.target.value, ...(e.target.value ? {} : { priceUnit: 'unit' }) })} className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3">
                       <option value="">Second unit (optional)</option>
                       {['pcs','unit','carton','packet','pack','dozen','box','case','bag','bottle','can','jar','sachet','pair','set','kg','g','mg','L','ml','meter','cm','roll','tray','bundle'].map((unit) => <option key={unit} value={unit}>{unit}</option>)}
                     </select>
@@ -741,8 +766,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({ shop, products }) 
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Price entered per</label>
-                  <select value={form.priceUnit || 'pcs'} onChange={(e) => setForm({ ...form, priceUnit: e.target.value as 'pcs' | 'unit' })} className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg bg-white">
-                    <option value="pcs">Piece (pcs)</option><option value="unit">Selected unit ({form.unit})</option>
+                  <select value={form.priceUnit || 'unit'} onChange={(e) => setForm({ ...form, priceUnit: e.target.value as 'pcs' | 'unit' | 'secondary' })} className="w-full min-h-[42px] px-3 py-2 border border-slate-200 rounded-lg bg-white">
+                    <option value="unit">Primary unit ({form.unit})</option>
+                    {form.secondaryUnit && <option value="secondary">Secondary unit ({form.secondaryUnit})</option>}
                   </select>
                 </div>
               </div>

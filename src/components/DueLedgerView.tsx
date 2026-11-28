@@ -58,7 +58,13 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
   const [tab, setTab] = useState<'customers' | 'suppliers' | 'statement'>('customers');
   const [search, setSearch] = useState('');
   const [onlyWithDue, setOnlyWithDue] = useState(false);
+  const [marketFilter, setMarketFilter] = useState('all');
   const [statementPartyFilter, setStatementPartyFilter] = useState<string>('all');
+
+  const markets = useMemo(
+    () => [...new Set(customers.map((c) => c.marketArea?.trim()).filter((market): market is string => Boolean(market)))].sort((a, b) => a.localeCompare(b)),
+    [customers]
+  );
 
   const [actionModal, setActionModal] = useState<{
     mode: 'collect_customer' | 'add_customer_due' | 'pay_supplier' | 'add_supplier_due';
@@ -106,6 +112,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
     const q = search.trim().toLowerCase();
     return customers
       .filter((c) => {
+        if (marketFilter !== 'all' && c.marketArea?.trim() !== marketFilter) return false;
         if (onlyWithDue && Number(c.balanceDue || 0) <= 0) return false;
         if (!q) return true;
         return (
@@ -116,12 +123,13 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
         );
       })
       .sort((a, b) => Number(b.balanceDue || 0) - Number(a.balanceDue || 0));
-  }, [customers, search, onlyWithDue]);
+  }, [customers, search, onlyWithDue, marketFilter]);
 
   const filteredSuppliers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return suppliers
       .filter((s) => {
+        if (marketFilter !== 'all' && !(s.address || '').toLowerCase().includes(marketFilter.toLowerCase())) return false;
         if (onlyWithDue && s.balanceDue <= 0) return false;
         if (!q) return true;
         return (
@@ -132,11 +140,15 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
         );
       })
       .sort((a, b) => b.balanceDue - a.balanceDue);
-  }, [suppliers, search, onlyWithDue]);
+  }, [suppliers, search, onlyWithDue, marketFilter]);
 
   const filteredStatement = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const customerMarkets = new Map(customers.map((customer) => [customer.id, customer.marketArea?.trim() || '']));
     return ledgerEntries.filter((entry) => {
+      if (marketFilter !== 'all') {
+        if (entry.partyType !== 'customer' || customerMarkets.get(entry.partyId) !== marketFilter) return false;
+      }
       if (statementPartyFilter === 'customers' && entry.partyType !== 'customer') return false;
       if (statementPartyFilter === 'suppliers' && entry.partyType !== 'supplier') return false;
       if (
@@ -154,7 +166,9 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
         entry.notes.toLowerCase().includes(q)
       );
     });
-  }, [ledgerEntries, statementPartyFilter, search]);
+  }, [ledgerEntries, statementPartyFilter, search, marketFilter, customers]);
+
+  const marketSupplierDueCount = filteredSuppliers.filter((s) => s.balanceDue > 0).length;
 
   const openModal = (
     mode: 'collect_customer' | 'add_customer_due' | 'pay_supplier' | 'add_supplier_due',
@@ -321,7 +335,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
               tab === 'customers' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Customer Due ({summary.customerDueCount})
+            Customer Due ({marketFilter === 'all' ? summary.customerDueCount : filteredCustomers.filter((c) => Number(c.balanceDue || 0) > 0).length})
           </button>
           {!isSrPortal && <button
             type="button"
@@ -330,7 +344,7 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
               tab === 'suppliers' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Supplier Cash &amp; Due ({summary.supplierDueCount})
+            Supplier Cash &amp; Due ({marketFilter === 'all' ? summary.supplierDueCount : marketSupplierDueCount})
           </button>}
           {!isSrPortal && <button
             type="button"
@@ -339,11 +353,21 @@ export const DueLedgerView: React.FC<DueLedgerViewProps> = ({
               tab === 'statement' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
-            Full Statement ({ledgerEntries.length})
+            Full Statement ({filteredStatement.length})
           </button>}
         </div>
 
-        <div className="flex items-center gap-2 flex-1 md:max-w-md">
+        <div className="flex items-center gap-2 flex-1 md:max-w-3xl">
+          <label className="sr-only" htmlFor="ledger-market-filter">Filter by market</label>
+          <select
+            id="ledger-market-filter"
+            value={marketFilter}
+            onChange={(e) => setMarketFilter(e.target.value)}
+            className="min-h-[38px] max-w-[180px] px-2.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-700"
+          >
+            <option value="all">All Markets</option>
+            {markets.map((market) => <option key={market} value={market}>{market}</option>)}
+          </select>
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input

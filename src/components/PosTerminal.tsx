@@ -213,8 +213,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
       const idx = prev.findIndex((i) => i.product.id === product.id);
       if (idx >= 0) {
         const currentQty = prev[idx].qty;
-        if (currentQty >= product.stock) {
-          showNotice(`Only ${product.stock} ${product.unit} available for ${product.name}.`);
+        const ratio = prev[idx].saleUnit === product.secondaryUnit ? (product.secondaryUnitQuantity || 1) : 1;
+        if ((currentQty + 1) / ratio > product.stock) {
+          showNotice(`Only ${product.stock} ${product.unit}${product.secondaryUnit ? ` (${product.stock * (product.secondaryUnitQuantity || 1)} ${product.secondaryUnit})` : ''} available for ${product.name}.`);
           return prev;
         }
         const next = [...prev];
@@ -449,7 +450,7 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                 ><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
               <div className="flex items-end gap-2">
-                <label className="w-24 text-[10px] font-medium text-slate-500">Unit
+                <label className="w-24 text-[10px] font-medium text-slate-500">Sale unit
                   <select value={saleUnit} onChange={(e)=>{const unit=e.target.value;const ratio=unit===product.secondaryUnit?(product.secondaryUnitQuantity||1):1;updateCartItem(product.id,{saleUnit:unit,unitPrice:product.sellingPrice/ratio});}} className="mt-1 w-full min-h-[36px] rounded-lg border border-slate-200 px-1 text-xs text-slate-900">
                     <option value={product.unit}>{product.unit}</option>{product.secondaryUnit && <option value={product.secondaryUnit}>{product.secondaryUnit}</option>}
                   </select>
@@ -480,6 +481,9 @@ export const PosTerminal: React.FC<PosTerminalProps> = ({
                   {formatBDT(unitPrice * qty, false)}
                 </div>
               </div>
+              <p className="text-[10px] text-slate-500">
+                Available: {product.stock} {product.unit}{product.secondaryUnit ? ` · ${Number((product.stock * (product.secondaryUnitQuantity || 0)).toFixed(2))} ${product.secondaryUnit}` : ''}
+              </p>
             </div>
           ))
         )}
